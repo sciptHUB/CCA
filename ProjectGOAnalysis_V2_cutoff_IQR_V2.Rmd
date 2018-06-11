@@ -1,0 +1,1089 @@
+---
+title: "CCA-Heterogeneity"
+author: "Pat Kueanjinda"
+date: "June 2, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+---
+title: "CCA RNA-seq"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(DOSE)
+library(enrichplot)
+library(org.Hs.eg.db)
+library(xlsx)
+```
+
+```{r}
+setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq')
+
+mydf <- read.csv('Gene_Expression_Matrix.csv', header = TRUE, stringsAsFactors = FALSE)
+# remove columns where ALL rows are NA
+df <- mydf[,colSums(is.na(mydf)) < nrow(mydf)]
+```
+
+```{r}
+# apply cut-off at percentile 50th 
+# select only CCA cell lines
+# Drug responses subgroups
+DRGROUP1 <- c('K213','K214','K156','HUCCA1','RBE','D138')
+DRGROUP2 <- c('K055','K100','D068','D131','HuCCT1','SSP25','TFK1','TYBDC1','YSCCC')
+cell.CCA <- c(DRGROUP1,DRGROUP2)
+cell.location <- which(colnames(df) %in% cell.CCA)
+df.mat <- df[,c(1,cell.location)]
+# calculate quartile 50th
+QT50.mat <- apply(df.mat[,-c(1)],1, function(i) {quantile(i,0.5)})
+QT50.df <- data.frame('QT50' = QT50.mat)
+
+df.mat2 <- cbind(df.mat[,1],QT50.df,df.mat[,c(2:16)])
+# remove any gene with QT50 < 0
+df.mat3 <- df.mat2[df.mat2$QT50 > 0,] 
+colnames(df.mat3)[1] <- 'Gene.name'
+```
+
+
+```{r}
+# normalize log2 with group median value
+normIQR <- function(D) {
+  d <- as.numeric(D)
+  row.IQR <- IQR(d, type = 2)
+  row.median <- median(d)
+  #row.value <- (d - row.median)/row.IQR # Dision with row.IQR will stretch gene group's variance
+  row.value <- (d - row.median)
+}
+```
+
+```{r}
+# normalize with median of gene group
+df.normIQR <- t(apply(df.mat3[,3:17], 1, normIQR))
+df.normIQR[!is.finite(df.normIQR)] <- 0
+colnames(df.normIQR) <- colnames(df.mat3[,3:17])
+# data as fold-change of expression to group median
+df.norm <- log2(df.normIQR)
+df.norm[!is.finite(df.norm)] <- 0
+# This matrix will be used for GSEA evaluation
+df.new <- cbind(data.frame('Gene.name' = df.mat3[,1]),as.data.frame(df.normIQR))
+
+#############################################
+# This section will calculate ~delta-delta-CT like comparing between test and control group
+cell.CCA1 <- DRGROUP1 # MEK, Src-Abl sensitive
+cell.CCA2 <- DRGROUP2 # MEK, Src-Abl insensitive
+
+# separate CCA subtype
+gr1.loc <- which(colnames(df.new) %in% cell.CCA1)
+gr2.loc <- which(colnames(df.new) %in% cell.CCA2)
+# calculate median of each subtype
+gr1.median <- apply(df.new[,gr1.loc], 1, median)
+gr2.median <- apply(df.new[,gr2.loc], 1, median)
+# subtract log2(fold-change) with median of control subtype
+gr.control <- gr2.median
+df.control <- df.new[,gr2.loc] - gr.control
+df.test <- df.new[,gr1.loc] - gr.control
+
+df.all <- cbind(data.frame('Gene.name' = df.new[,1], df.test, df.control))
+```
+
+
+```{r}
+# add ENTREZID column
+addENTREZID <- function(dat) {
+  List.col2 <- colnames(df.new)
+  loc.symbol <- which(List.col2 == 'Gene.name')
+  library(clusterProfiler)
+  md <- bitr(df.new[,loc.symbol], fromType = 'SYMBOL', toType = c('ENTREZID'), OrgDb = 'org.Hs.eg.db')
+  
+  # now get values from all CCA 
+  df.sel <- df.new %>% filter(Gene.name %in% md$SYMBOL) %>% 
+    select_(.dots = colnames(df.new))
+  
+  mc <- bitr(df.sel$Gene.name, fromType = 'SYMBOL', toType = 'ENTREZID', OrgDb = 'org.Hs.eg.db')
+  mc.uq <- mc[!duplicated(mc$SYMBOL),]
+  df.out <- as.data.frame(append(df.sel,data.frame('ENTREZID' = mc.uq$ENTREZID) , after = loc.symbol))
+  colnames(df.out)[1] <- 'SYMBOL'
+  return(df.out)
+}
+# create file for GSEA
+df.B <- addENTREZID(df.new)
+colnames(df.B)[c(1,2)] <- c('NAME','DESCRIPTION')
+# save file
+#write.table(df.B, file = 'GSEA_Matrix_Broad.txt', row.names = FALSE, quote = FALSE, sep = "\t")
+
+df.C <- addENTREZID(df.all)
+colnames(df.C)[c(1,2)] <- c('NAME','DESCRIPTION')
+# save file
+write.table(df.C, file = 'GSEA_Matrix_Broad_testcontrol.txt', row.names = FALSE, quote = FALSE, sep = "\t")
+```
+
+
+```{r}
+# use MSigDB as gene sets 
+# set reference file
+library(GSEABase)
+data.path <- 'C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq'
+data.folder <- 'msigdb_v6.1_files_local/msigdb_v6.1_GMTs'
+data.list <- list.files(file.path(data.path,data.folder), pattern = '\\.entrez.gmt$')
+
+gmtfile.hm <- file.path(data.path,data.folder,data.list[20])
+c1 <- read.gmt(gmtfile.hm)
+
+gmtfile.bp <- file.path(data.path,data.folder,data.list[15])
+c2 <- read.gmt(gmtfile.bp)
+
+gmtfile.kg <- file.path(data.path,data.folder,data.list[5])
+c3 <- read.gmt(gmtfile.kg)
+
+gmtfile.cp <- file.path(data.path,data.folder,data.list[7])
+c4 <- read.gmt(gmtfile.cp)
+
+gmtfile.os <- file.path(data.path,data.folder,data.list[18])
+c5 <- read.gmt(gmtfile.os)
+```
+
+
+```{r}
+myenrich <- function(df,col.ENTREZID,col.cell,db,f.switch){
+  List.col <- colnames(df)
+  num.cell <- length(col.cell)
+  List.gseKEGG <- lapply(1:num.cell, function(i) {
+    df.cell <- df %>% select_(.dots = List.col[c(col.ENTREZID,col.cell[i])])
+    v <- df.cell[,2] # data were already applied log2
+    v[!is.finite(v)] <- 0 # non-finite values = 0
+    names(v) <- df.cell[,1] # use ENTREZID as rownames
+    vin <- sort(v, decreasing = TRUE) # sort based on value
+    
+    kk2 <- GSEA(vin, 
+                exponent = 1, 
+                nPerm = 1000, 
+                minGSSize = 10, 
+                maxGSSize = 500, 
+                pvalueCutoff = 0.5, 
+                pAdjustMethod = "BH", 
+                TERM2GENE = db,
+                TERM2NAME = NA, 
+                verbose = FALSE, 
+                seed = FALSE)
+    
+    kk2 <- setReadable(kk2, OrgDb = org.Hs.eg.db, keytype = 'ENTREZID') # convert ENTREZID to SYMBOL, require clusterprofiler package
+    cell.gseKEGG <- kk2@result # extract table result from class kk2
+    if (f.switch == 1){
+      Sig.cell.gseKEGG <- cell.gseKEGG %>% filter(grepl('.*signaling pathway',Description)) # filter rows with term 'signaling pathway'
+      library(tm) # NLP package
+      mi <- Sig.cell.gseKEGG$Description
+      mt <- removeWords(as.character(mi),'signaling pathway')
+      mc <- rep(List.col[col.cell[i]], length(mi))
+      loc.add <- which(colnames(Sig.cell.gseKEGG) == 'Description')
+      Sig.cell.gseKEGG <- as.data.frame(append(Sig.cell.gseKEGG, data.frame('ShortDescription' = mt,
+                                                                            'Cell' = mc), after = loc.add))
+    } else {
+      Sig.cell.gseKEGG <- cell.gseKEGG
+      mi <- Sig.cell.gseKEGG$Description
+      mc <- rep(List.col[col.cell[i]], length(mi))
+      loc.add <- which(colnames(Sig.cell.gseKEGG) == 'Description')
+      Sig.cell.gseKEGG <- as.data.frame(append(Sig.cell.gseKEGG, data.frame('Cell' = mc), after = loc.add))
+    }
+    outputs <- list('table' = Sig.cell.gseKEGG,
+                    'gseKEGG' = kk2)
+    return(outputs)
+  })
+  Table.gseKEGG <- do.call(rbind,lapply(1:length(List.gseKEGG), function(x) List.gseKEGG[[x]]$table))
+  gsea.output <- lapply(1:length(List.gseKEGG), function(x) List.gseKEGG[[x]]$gseKEGG)
+  finals <- list('table' = Table.gseKEGG,
+                 'gsea' = gsea.output)
+  return(finals)
+}
+```
+
+
+```{r}
+A <- myenrich(df.C,
+         col.ENTREZID = 2,
+         col.cell = 3:17,
+         db = c1,
+         f.switch = 0)
+Testmat.HM <- A$table
+
+B <- myenrich(df.C,
+         col.ENTREZID = 2,
+         col.cell = 3:17,
+         db = c2,
+         f.switch = 0)
+Testmat.BP <- B$table
+
+C <- myenrich(df.C,
+         col.ENTREZID = 2,
+         col.cell = 3:17,
+         db = c3,
+         f.switch = 0)
+Testmat.KG <- C$table
+
+D <- myenrich(df.C,
+         col.ENTREZID = 2,
+         col.cell = 3:17,
+         db = c4,
+         f.switch = 0)
+Testmat.CP <- D$table
+
+E <- myenrich(df.C,
+         col.ENTREZID = 2,
+         col.cell = 3:17,
+         db = c5,
+         f.switch = 0)
+Testmat.OS <- E$table
+```
+
+
+```{r}
+# save GSEA matrix
+write.csv(Testmat.HM, file = 'GSEA_matrix_hallmark.csv',row.names = FALSE, quote = FALSE)
+write.csv(Testmat.BP, file = 'GSEA_matrix_bp.csv', row.names = FALSE, quote = FALSE)
+write.csv(Testmat.KG, file = 'GSEA_matrix_kegg.csv', row.names = FALSE, quote = FALSE)
+write.csv(Testmat.CP, file = 'GSEA_matrix_cp.csv', row.names = FALSE, quote = FALSE)
+write.csv(Testmat.OS, file = 'GSEA_matrix_os.csv', row.names = FALSE, quote = FALSE)
+```
+
+
+```{r}
+# filter Hallmarks NES matrix extracting FDR qvalue < 0.25
+sel25 <- Testmat.HM %>% filter(qvalues < 0.25)
+sel25.all <- mutate(sel25, Subtype = ifelse(sel25$Cell %in% c(DRGROUP1), 1, 2))
+
+Sig <- sel25.all %>% select_('ID','Cell','Subtype','NES','p.adjust','qvalues')
+# convert p-value; smaller the larger
+Sig$log2.p.adjust <- -log2(Sig$p.adjust)
+Sig$Cell <- factor(Sig$Cell)
+Sig$Subtype <- factor(Sig$Subtype)
+
+write.table(Sig, file = 'NES_KG.csv', row.names = FALSE, quote = FALSE)
+
+library(colorRamps)
+CellColors <- colorRamps::primary.colors(length(unique(Sig$Cell)))
+
+library(ggplot2)
+#Sig.sort <- Sig[order(Sig$p.adjust),]
+ct_fig1 <- ggplot(Sig, aes(x = NES, # GR column on x-axis
+                          y = reorder(ID,log2.p.adjust),
+                          group = Cell,
+                          shape = Cell)) + # Count as size of dot
+  scale_shape_manual(values = 1:nlevels(Sig$Cell)) +
+  geom_vline(xintercept = 0, 
+             linetype = 'dotted', 
+             color = 'red',
+             size = 1) +
+  geom_point(aes(color = factor(Subtype), size = log2.p.adjust)) +
+  scale_color_manual(values = c('red','blue')) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(face = 'plain', color = 'black', 
+                                   size = 10, angle = 0),
+          axis.text.y = element_text(face = 'plain', color = 'black',
+                                   size = 5, angle = 0)) +
+  labs(    x = expression(NES),
+           y = expression(Oncogenic~Signatures),
+           size = expression(-log[2]~(Adj.p-value)),
+           color = expression(Subtype),
+           shape = expression(Cell))
+
+ct_fig2 <- ggplot(Sig, aes(x = NES, # GR column on x-axis
+                          y = reorder(ID,log2.p.adjust),
+                          group = Subtype,
+                          color = factor(Subtype))) + # Count as size of dot
+  geom_vline(xintercept = 0, 
+             linetype = 'dotted', 
+             color = 'red',
+             size = 1) +
+  geom_point(aes(fill = factor(Subtype),
+                 size = log2.p.adjust),
+             color = 'black',
+             pch = 21) +
+  scale_fill_manual(values = c('red','blue')) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(face = 'plain', color = 'black', 
+                                   size = 10, angle = 0),
+        axis.text.y = element_text(face = 'plain', color = 'black',
+                                   size = 5, angle = 0)) +
+  labs(    x = expression(NES),
+           y = expression(Oncogenic~Signatures),
+           size = expression(-log[2]~(Adj.p-value)),
+           fill = expression(Cell))
+```
+
+
+```{r}
+# place order of CCA as subtype 1 and subtype 2 by rearranging column data
+subtype.order <- c('K213','K214','K156','HUCCA1','RBE','D138','HuCCT1','TYBDC1','K055','D068','D131','TFK1','K100','YSCCC','SSP25')
+
+mx.by.subtypes <- dcast(Sig, ID ~ factor(Cell,subtype.order), value.var = 'NES')
+
+mx2.filter <- mx.by.subtypes[,colnames(mx.by.subtypes) %in% c(DRGROUP1)]
+
+rownames(mx2.filter) <- mx.by.subtypes[,1]
+mx2.filter <- as.matrix(mx2.filter) # this matrix will be used for PCA and tSNE
+mx2.filter[is.na(mx2.filter)] <- 0
+
+# count number of zero per row and remove the rows of zero number is larger than 80% of cell lines
+mxx2 <- mx2.filter[rowSums(mx2.filter == 0) <= (ncol(mx2.filter)-floor(ncol(mx2.filter)*0.5)), ]
+mxx2 <- mx2.filter
+```
+
+
+
+```{r}
+# Find VIP scores
+library(pls)
+# load CCA's drug response data 
+drugResponses <- read.csv('GR50_87drug.csv', header = TRUE, stringsAsFactors = FALSE)
+# transpose to long table
+library(reshape2)
+colnames(drugResponses)[1] <- 'Cell'
+rownames(drugResponses) <- drugResponses$Cell
+drmx <- drugResponses[,-1] # matrix of drug response for all breast cancer cell lines
+```
+
+
+```{r}
+# create NES matrix of Cell x Pathway
+tmx <- t(mxx2)
+pmx <- as.data.frame(tmx)# NES matrix of cells x pathways
+List.cells <- intersect(rownames(drmx), rownames(pmx)) # list of cell lines in the two matrices that intersect
+
+# use the list of intersected cell lines as filter
+pmxTrain <- pmx %>% filter(rownames(pmx) %in% List.cells) # %>% transpose
+rownames(pmxTrain) <- List.cells
+
+# Prepare scaled NES matrix 
+# scale NES scores across cell lines
+pmx2 <- t(pmxTrain)
+pmx2Train <- apply(pmx2,1, scale) # scale data across rows
+tpmx2 <- as.data.frame(pmx2Train)
+colnames(tpmx2) <- colnames(pmxTrain)
+rownames(tpmx2) <- List.cells
+
+# Prepare drug response matrix
+drmxTrain <- drmx %>% filter(rownames(drmx) %in% List.cells) # %>% transpose
+rownames(drmxTrain) <- List.cells
+
+# separate NES matrix of pathways into subtype 1 and subtype 2
+S1 <- tpmx2[which(rownames(tpmx2) %in% c('K213','K214','K156','HUCCA1','RBE','D138')),]
+S2 <- tpmx2[which(rownames(tpmx2) %in% c('HuCCT1','TYBDC1','K055','D068','D131','TFK1','K100','YSCCC','SSP25')),]
+
+# separate drug response into subtype 1 and subtype 2
+D1 <- drmxTrain[which(rownames(drmxTrain) %in% c('K213','K214','K156','HUCCA1','RBE','D138')),]
+D2 <- drmxTrain[which(rownames(drmxTrain) %in% c('HuCCT1','TYBDC1','K055','D068','D131','TFK1','K100','YSCCC','SSP25')),]
+
+# follow analytical steps per instruction manual
+# use subtype 1
+X <- S1 #pmxTrain
+Y <- data.frame('DR.test' = D1$Erlotinib)
+newdat <- cbind(Y, GE = I(as.matrix(X))) # this line is to create data input for pls package***
+num.prcomp <- nrow(X)-1
+myplsr <- plsr(DR.test ~ GE, num.prcomp, data = newdat, 
+               method = 'oscorespls',
+               validation = 'LOO')
+
+# look at R2 graph to determine appropriate number of components
+plot(R2(myplsr))
+```
+
+
+```{r}
+# determine best component for plsr
+# using fold-change of CV from RMSEP
+# diff comp > 10 is ignored
+findPLSRcomp <- function(myplsr) {
+  a <- RMSEP(myplsr)
+  df.cv <- as.data.frame(a$val)
+  
+  n <- length(df.cv[2,])
+  fc.out <- lapply(1:n, function(n) {
+    fc <- df.cv[2,n+1] / df.cv[2,n]
+  })
+  
+  fc.table <- as.data.frame(do.call(rbind,fc.out))
+  comp <- which(fc.table$V1 > 10)
+  sel.comp <- comp - 1
+  return(sel.comp)
+}
+
+bestcomp <- findPLSRcomp(myplsr)
+
+myplsr <- plsr(DR.test ~ GE, bestcomp, data = newdat, 
+               method = 'oscorespls',
+               validation = 'LOO')
+
+# use observed and predicted data from PC1
+df2 <- data.frame('observed' = myplsr$model[,1], 
+                  'predicted' = myplsr$fitted.values[,,1], 
+                  'residuals' = myplsr$residuals[,,1])
+# create linear regression model
+df2.lm <- lm(predicted ~ observed, data = df2)
+# extract coefficient value
+m <- df2.lm$coefficients[2]
+# determine whether coeff m is positive or negative
+m.sign <- ifelse(m < 0, 'negative', 'positive')
+
+# calculate PRESS
+library(qpcR)
+Press <- PRESS(df2.lm)
+
+# calculate TSS
+Tss <- sum((df2$observed - mean(df2$observed))^2)
+
+Q2 <- 1 - (Press$P.square/Tss)
+
+# extract R2 from lm
+R2 <- summary(df2.lm)$adj.r.squared 
+```
+
+
+```{r}
+# plot prediction accuracy of plsr model
+library(ggpmisc)
+sp1 <- ggplot(df2, aes(x = observed, y = predicted)) +
+  geom_point() +
+  geom_smooth(method = lm, formula = y ~ x, se = FALSE) + 
+  # stat_poly_eq(aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+  #              label.x.npc = "right", label.y.npc = 0.15,
+  #              formula = y ~ x, parse = TRUE, size = 3) +
+  
+  coord_fixed(ratio = 1,xlim = c(floor(min(df2$observed,df2$predicted)),
+                 ceiling(max(df2$observed,df2$predicted))),
+                 ylim = c(floor(min(df2$observed,df2$predicted)), ceiling(max(df2$observed,df2$predicted)))) +
+  # coord_equal() +
+  theme_bw() +
+  labs(x = 'Observed GR50',
+       y = 'Predicted GR50',
+       title = '')
+
+library(grid)
+# Create a text
+grob <- grobTree(textGrob(paste0('R2 = ',format(round(R2,2),nsmall = 2),
+                                 '\nQ2 = ',
+                                 format(round(Q2,2),nsmall = 2)),
+                          x = 0.1,  
+                          y = 0.90, 
+                          hjust = 0,
+                          gp = gpar(col = 'black', 
+                                    fontsize = 10, 
+                                    fontface = "italic")))
+
+sp1 + annotation_custom(grob)
+```
+
+
+```{r}
+# use PC score for ploting
+scoredat <- data.frame('PC1' = myplsr2$scores[,1], # from component1
+                       'PC2' = myplsr2$scores[,2], # from component2
+                       'Cell' = List.cells,
+                       'DR.Erlotinib' = drmxTrain$Erlotinib)
+
+SS1 <- c('K213','K214','K156','HUCCA1','RBE','D138')
+SS2 <- c('HuCCT1','TYBDC1','K055','D068','D131','TFK1','K100','YSCCC','SSP25')
+
+subtype <- lapply(1:nrow(scoredat), function(x) {
+  cellstr <- scoredat$Cell[x] #gsub('\\_.*','',new_scores$Cell[x])
+  if (cellstr %in% SS1){
+    Type <- 'S1'
+  } else if (cellstr %in% SS2){
+    Type <- 'S2'
+  }})
+#plot(myplsr2$scores[,2], myplsr2$scores[,5])
+
+scoredat <- as.data.frame(append(scoredat,data.frame('subtype' = do.call(rbind,subtype))))
+
+library(ggrepel)
+
+ct_plsr <- ggplot(scoredat, aes(x = PC1, 
+                   y = PC2)) +
+  #geom_hline(yintercept = 0, colour = 'gray65') +
+  #geom_vline(xintercept = 0, colour = 'gray65') +
+  geom_point(aes(color = DR.Erlotinib, shape = factor(subtype)), size = 5) +
+  #scale_size(breaks = c(-8,-6,-4,-2,0), labels = c(8,6,4,2,0)) +
+  scale_color_gradient(low = 'blue', high = 'red') +
+  geom_text_repel(aes(label = Cell), 
+                  size = 3, 
+                  alpha = 0.75,
+                  box.padding = unit(0.5, 'lines'),
+                  point.padding = 0.1,
+                  segment.colour = 'gray60',
+                  segment.size = 0.5,
+                  segment.alpha = 0.5,
+                  force = 2) +
+  #guides(size = FALSE) +
+  labs(x = paste0('PC1'),
+       y = paste0('PC2'),
+       colour = 'GR50',
+       #size = 'sensitivity \n(IC50)',
+       shape = 'Subtype',
+       title = 'PLSR (NIPALS) of CCA subtypes \n and responses to  Erlotinib') +
+  theme_bw()
+
+ct_plsr
+```
+
+
+```{r}
+## VIP returns all VIP values for all variables and all number of components,
+## as a ncomp x nvars matrix.
+VIP <- function(object) {
+  if (object$method != "oscorespls")
+    stop("Only implemented for orthogonal scores algorithm.  Refit with 'method = \"oscorespls\"'")
+  if (nrow(object$Yloadings) > 1)
+    stop("Only implemented for single-response models")
+  
+  SS <- c(object$Yloadings)^2 * colSums(object$scores^2)
+  Wnorm2 <- colSums(object$loading.weights^2)
+  SSW <- sweep(object$loading.weights^2, 2, SS / Wnorm2, "*")
+  sqrt(nrow(SSW) * apply(SSW, 1, cumsum) / cumsum(SS))
+}
+
+
+## VIPjh returns the VIP of variable j with h components
+VIPjh <- function(object, j, h) {
+  if (object$method != "oscorespls")
+    stop("Only implemented for orthogonal scores algorithm.  Refit with 'method = \"oscorespls\"'")
+  if (nrow(object$Yloadings) > 1)
+    stop("Only implemented for single-response models")
+  
+  b <- c(object$Yloadings)[1:h]
+  Ta <- object$scores[,1:h, drop = FALSE]
+  SS <- b^2 * colSums(Ta^2)
+  W <- object$loading.weights[,1:h, drop = FALSE]
+  Wnorm2 <- colSums(W^2)
+  sqrt(nrow(W) * sum(SS * W[j,]^2 / Wnorm2) / sum(SS))
+}
+```
+
+
+```{r}
+# calculate VIP score
+# use 'orscorepls' (NIPALS) algorithm
+Input.pathway <- S1#tpmx2 #pmxTrain
+Input.drug <- D1 #drmxTrain
+# obtain number of pathways
+num.pathway <- ncol(Input.pathway)
+# obtain number of drugs
+num.drug <- ncol(Input.drug)
+# use function to find predicted values using PLSR model
+vip.drug <- lapply(1:num.drug, function(n) {
+  # define independent variable
+  X <- Input.pathway
+  # define dependent 
+  Y <- as.data.frame(Input.drug[n])
+  newdat <- cbind(Y, GE = I(as.matrix(X))) # this line is to create data input for pls package***
+  num.prcomp <- nrow(newdat)
+  colnames(newdat)[1] <- 'Drug'
+  myplsr <- plsr(Drug ~ GE, num.prcomp-1, data = newdat, 
+                 method = 'oscorespls',
+                 scale = TRUE,
+                 validation = 'LOO')
+  # calculate VIP score of variable (pathway) per GR50 of the drug tested
+  vip.score <- lapply(1:num.pathway, function(x) VIPjh(myplsr,x,myplsr$ncomp))
+  vip.out <- as.data.frame(do.call(rbind,vip.score))
+  colnames(vip.out)[1] <- colnames(Y)
+  
+  # calculate coef value of linear regression model based on observed and predicted variables from PC1 from PLSR
+  add.sign <- lapply(1:num.pathway, function(p) {
+    df2 <- data.frame('x' = newdat[,2][,p], 
+                      'y' = newdat[,1])
+    # create linear regression model
+    df2.lm <- lm(y ~ x, data = df2)
+    # extract coefficient value
+    m <- df2.lm$coefficients[2]
+    # determine whether coeff m is positive or negative
+    if(m < 0) {
+      value <- -vip.out[p,1]
+    } else {
+      value <- vip.out[p,1]
+    }
+    return(value)
+  })
+  vip.sign <- do.call(rbind,add.sign)
+  vip.sign <- as.data.frame(vip.sign)
+  colnames(vip.sign)[1] <- colnames(Y)
+  
+  # collect R2 from PLSR model
+  dat.R2 <- R2(myplsr)
+  # collect Mean Squared Prediction Error from PLSR model
+  dat.MSEP <- MSEP(myplsr)
+  
+  vip.outputs <- list('VIPtable' = vip.out,
+                      'R2' = dat.R2,
+                      'MSPE' = dat.MSEP,
+                      'VIPsign' = vip.sign)
+  return(vip.outputs)
+})
+# VIP score matrix without sign
+temp.mat <- lapply(1:length(vip.drug), function(q) {
+  VIPscore <- vip.drug[[q]]$VIPtable
+})
+
+VIP.matrix <- do.call(cbind,temp.mat)
+rownames(VIP.matrix) <- colnames(Input.pathway)
+
+# VIP score matrix with sign
+temp.mat2 <- lapply(1:length(vip.drug), function(r) {
+  VIPsign <- vip.drug[[r]]$VIPsign
+})
+
+VIPsign.matrix <- do.call(cbind,temp.mat2)
+rownames(VIPsign.matrix) <- colnames(Input.pathway)
+
+```
+
+
+```{r}
+# Drug x Class matrix
+
+drug.class <- read.csv('Drug_class.csv', header = TRUE, stringsAsFactors = FALSE)
+
+drug.class <- drug.class[order(drug.class$Drug),]
+
+class.unique <- unique(drug.class$Target)
+# assign color to each drug class
+library(RColorBrewer)
+mypalette1 <- brewer.pal(12,'Set3')
+mypalette2 <- brewer.pal(9,'Set1')
+mypalette3 <- brewer.pal(8,'Set2')
+mypalette4 <- brewer.pal(12,'Paired')
+
+drug.class$class.color[grepl('Akt',drug.class$Target, fixed = FALSE)] <- mypalette1[1]
+drug.class$class.color[grepl('CDK',drug.class$Target, fixed = FALSE)] <-  mypalette1[2]
+drug.class$class.color[grepl('EGFR',drug.class$Target, fixed = FALSE)] <- mypalette1[3]
+drug.class$class.color[grepl('IDH',drug.class$Target, fixed = FALSE)] <-  mypalette1[4]
+drug.class$class.color[grepl('JNK',drug.class$Target, fixed = FALSE)] <- mypalette1[5]
+drug.class$class.color[grepl('DNMT',drug.class$Target, fixed = FALSE)] <-  mypalette1[6]
+drug.class$class.color[grepl('FGFR',drug.class$Target, fixed = FALSE)] <- mypalette1[7]
+drug.class$class.color[grepl('mTOR',drug.class$Target, fixed = FALSE)] <-  mypalette1[8]
+drug.class$class.color[grepl('NF-kB',drug.class$Target, fixed = FALSE)] <- mypalette1[9]
+drug.class$class.color[grepl('PI3K',drug.class$Target, fixed = FALSE)] <-  mypalette1[10]
+drug.class$class.color[grepl('DNA|cycle|Pyrimidine|alkylating|microtubule',drug.class$Target, fixed = FALSE)] <- mypalette1[11]
+drug.class$class.color[grepl('Topo',drug.class$Target, fixed = FALSE)] <-  mypalette1[12]
+
+drug.class$class.color[grepl('Hh|Wnt',drug.class$Target, fixed = FALSE)] <- mypalette2[1]
+drug.class$class.color[grepl('Src|Abl',drug.class$Target, fixed = FALSE)] <-  mypalette2[2]
+drug.class$class.color[grepl('Met',drug.class$Target, fixed = FALSE)] <- mypalette2[3]
+drug.class$class.color[grepl('IAP',drug.class$Target, fixed = FALSE)] <-  mypalette2[4]
+drug.class$class.color[grepl('secretase',drug.class$Target, fixed = FALSE)] <- mypalette2[5]
+drug.class$class.color[grepl('HDAC',drug.class$Target, fixed = FALSE)] <-  mypalette2[6]
+drug.class$class.color[grepl('MEK',drug.class$Target, fixed = FALSE)] <- mypalette2[7]
+drug.class$class.color[grepl('JAK|STAT',drug.class$Target, fixed = FALSE)] <-  mypalette2[8]
+drug.class$class.color[grepl('p38',drug.class$Target, fixed = FALSE)] <- mypalette2[9]
+
+drug.class$class.color[grepl('PARP',drug.class$Target, fixed = FALSE)] <- mypalette3[1]
+drug.class$class.color[grepl('MDM2',drug.class$Target, fixed = FALSE)] <-  mypalette3[2]
+drug.class$class.color[grepl('IGF',drug.class$Target, fixed = FALSE)] <- mypalette3[3]
+drug.class$class.color[grepl('IMPDH',drug.class$Target, fixed = FALSE)] <-  mypalette2[4]
+drug.class$class.color[grepl('DHFR',drug.class$Target, fixed = FALSE)] <- mypalette3[5]
+drug.class$class.color[grepl('HDAC',drug.class$Target, fixed = FALSE)] <-  mypalette3[6]
+drug.class$class.color[grepl('PDGFR',drug.class$Target, fixed = FALSE)] <- mypalette3[7]
+drug.class$class.color[grepl('BET',drug.class$Target, fixed = FALSE)] <-  mypalette3[8]
+
+drug.class$class.color[grepl('GFGR',drug.class$Target, fixed = FALSE)] <- mypalette4[1]
+drug.class$class.color[grepl('proteasome',drug.class$Target, fixed = FALSE)] <-  mypalette4[2]
+drug.class$class.color[grepl('RTK',drug.class$Target, fixed = FALSE)] <- mypalette4[3]
+drug.class$class.color[grepl('ALK',drug.class$Target, fixed = FALSE)] <-  mypalette4[4]
+drug.class$class.color[grepl('RAF',drug.class$Target, fixed = FALSE)] <-  mypalette4[5]
+```
+
+
+```{r}
+# VIP score heatmap
+library(ComplexHeatmap)
+# convert VIPsign to matrix class
+df.VIP <- as.matrix(VIPsign.matrix)
+# remove column in which entire rows contain NaN
+df.VIP2 <- df.VIP[,colSums(!is.nan(df.VIP)) > 0]
+
+df.VIP2[df.VIP2 > -1 & df.VIP2 < 1] <- 0
+
+# # create legend annotation for drug target
+# dt <- data.frame(Target = drug.class$Target)
+# TargetColor <- drug.class$class.color
+# names(TargetColor) <- drug.class$Target
+# 
+# # create heatmap annotation for drug class
+# dc <- data.frame(Drug = drug.class$Drug)
+# DrugColor <- drug.class$class.color
+# names(DrugColor) <- drug.class$Drug
+# 
+# ha <- HeatmapAnnotation(df = dc,
+#                         na_col = 'white',
+#                         colname = anno_text(colnames(df.VIP2),
+#                                             gp = gpar(fontsize = 6),
+#                                             rot = 45,
+#                                             just = "right",
+#                                             offset = unit(1, "npc") - unit(2, "mm")),
+#                         #col = list(Drug = DrugColor),
+#                         annotation_height = unit.c(unit(5, "mm"), 
+#                                                    max_text_width(colnames(df.VIP2)) + unit(2, "mm")),
+#                         show_legend = FALSE)
+# 
+# has = columnAnnotation(df = dt, 
+#                     na_col = 'white',
+#                     annotation_legend_param = list(Target = list(ncol = 10, title = "Target", 
+#                                                                  title_gp = gpar(fontsize = 10, 
+#                                                                                  fontface = 'bold'),
+#                                                                  labels_gp = gpar(fontsize = 8))),
+#                     col = list(Target = TargetColor),
+#                     show_legend = FALSE)
+
+dff <- as.data.frame(df.VIP2)
+
+Ht1 <- Heatmap(dff,
+        cluster_rows = TRUE,
+        clustering_distance_rows = 'spearman',
+        clustering_method_rows = 'ward.D2',
+        cluster_columns = FALSE,
+        clustering_distance_columns = 'spearman',
+        clustering_method_columns = 'ward.D2',
+        row_title = 'Pathway',
+        row_title_side = 'right',
+        # figure title
+        column_title = 'VIP by Drug Subtype 1',
+        column_title_gp = gpar(fontsize = 20, fontface = "bold"),
+        #column_title_side = 'bottom',
+        heatmap_legend_param = list(title = 'VIP score', color_bar = 'discrete'),
+        show_column_names = TRUE,
+        show_row_names = TRUE,
+        row_names_gp = gpar(fontsize = 8),
+        column_names_gp = gpar(fontsize = 8))
+        
+
+draw(Ht1, heatmap_legend_side = 'bottom')
+# must execute code in Console
+for(an in colnames(dc)) {
+    decorate_annotation(an, {
+        # annotation names on the right
+        #grid.text(an, unit(1, "npc") + unit(2, "mm"), 0.5, default.units = "npc", just = "left")
+        # annotation names on the left
+        grid.text(an, unit(0, "npc") - unit(2, "mm"), 0.5, default.units = "npc", just = "right")
+    })
+}
+```
+
+
+```{r}
+# CCA subtype 2
+# calculate VIP score
+# use 'orscorepls' (NIPALS) algorithm
+Input.pathway <- S2#tpmx2 #pmxTrain
+Input.drug <- D2 #drmxTrain
+# obtain number of pathways
+num.pathway <- ncol(Input.pathway)
+# obtain number of drugs
+num.drug <- ncol(Input.drug)
+# use function to find predicted values using PLSR model
+vip.drug <- lapply(1:num.drug, function(n) {
+  # define independent variable
+  X <- Input.pathway
+  # define dependent 
+  Y <- as.data.frame(Input.drug[n])
+  newdat <- cbind(Y, GE = I(as.matrix(X))) # this line is to create data input for pls package***
+  num.prcomp <- nrow(newdat)
+  colnames(newdat)[1] <- 'Drug'
+  myplsr <- plsr(Drug ~ GE, num.prcomp-1, data = newdat, 
+                 method = 'oscorespls',
+                 scale = TRUE,
+                 validation = 'LOO')
+  # calculate VIP score of variable (pathway) per GR50 of the drug tested
+  vip.score <- lapply(1:num.pathway, function(x) VIPjh(myplsr,x,myplsr$ncomp))
+  vip.out <- as.data.frame(do.call(rbind,vip.score))
+  colnames(vip.out)[1] <- colnames(Y)
+  
+  # calculate coef value of linear regression model based on observed and predicted variables from PC1 from PLSR
+  add.sign <- lapply(1:num.pathway, function(p) {
+    df2 <- data.frame('x' = newdat[,2][,p], 
+                      'y' = newdat[,1])
+    # create linear regression model
+    df2.lm <- lm(y ~ x, data = df2)
+    # extract coefficient value
+    m <- df2.lm$coefficients[2]
+    # determine whether coeff m is positive or negative
+    if(m < 0) {
+      value <- -vip.out[p,1]
+    } else {
+      value <- vip.out[p,1]
+    }
+    return(value)
+  })
+  vip.sign <- do.call(rbind,add.sign)
+  vip.sign <- as.data.frame(vip.sign)
+  colnames(vip.sign)[1] <- colnames(Y)
+  
+  # collect R2 from PLSR model
+  dat.R2 <- R2(myplsr)
+  # collect Mean Squared Prediction Error from PLSR model
+  dat.MSEP <- MSEP(myplsr)
+  
+  vip.outputs <- list('VIPtable' = vip.out,
+                      'R2' = dat.R2,
+                      'MSPE' = dat.MSEP,
+                      'VIPsign' = vip.sign)
+  return(vip.outputs)
+})
+# VIP score matrix without sign
+temp.mat <- lapply(1:length(vip.drug), function(q) {
+  VIPscore <- vip.drug[[q]]$VIPtable
+})
+
+VIP.matrix <- do.call(cbind,temp.mat)
+rownames(VIP.matrix) <- colnames(Input.pathway)
+
+# VIP score matrix with sign
+temp.mat2 <- lapply(1:length(vip.drug), function(r) {
+  VIPsign <- vip.drug[[r]]$VIPsign
+})
+
+VIPsign.matrix <- do.call(cbind,temp.mat2)
+rownames(VIPsign.matrix) <- colnames(Input.pathway)
+
+```
+
+```{r}
+# VIP score heatmap
+library(ComplexHeatmap)
+# convert VIPsign to matrix class
+df.VIP <- as.matrix(VIPsign.matrix)
+# remove column in which entire rows contain NaN
+df.VIP2 <- df.VIP[,colSums(!is.nan(df.VIP)) > 0]
+
+df.VIP2[df.VIP2 > -1 & df.VIP2 < 1] <- 0
+
+# # create legend annotation for drug target
+# dt <- data.frame(Target = drug.class$Target)
+# TargetColor <- drug.class$class.color
+# names(TargetColor) <- drug.class$Target
+# 
+# # create heatmap annotation for drug class
+# dc <- data.frame(Drug = drug.class$Drug)
+# DrugColor <- drug.class$class.color
+# names(DrugColor) <- drug.class$Drug
+# 
+# ha <- HeatmapAnnotation(df = dc,
+#                         na_col = 'white',
+#                         colname = anno_text(colnames(df.VIP2),
+#                                             gp = gpar(fontsize = 6),
+#                                             rot = 45,
+#                                             just = "right", 
+#                                             offset = unit(1, "npc") - unit(2, "mm")),
+#                         col = list(Drug = DrugColor),
+#                         annotation_height = unit.c(unit(5, "mm"), 
+#                                                    max_text_width(colnames(df.VIP2)) + unit(2, "mm")),
+#                         show_legend = FALSE)
+# 
+# has = rowAnnotation(df = dt, 
+#                     na_col = 'white',
+#                     annotation_legend_param = list(Target = list(ncol = 10, title = "Target", 
+#                                                                  title_gp = gpar(fontsize = 10, 
+#                                                                                  fontface = 'bold'),
+#                                                                  labels_gp = gpar(fontsize = 8))),
+#                     col = list(Target = TargetColor))
+
+dff2 <- as.data.frame(df.VIP2)
+
+Ht2 <- Heatmap(dff2,
+        cluster_rows = TRUE,
+        clustering_distance_rows = 'spearman',
+        clustering_method_rows = 'ward.D2',
+        cluster_columns = FALSE,
+        clustering_distance_columns = 'spearman',
+        clustering_method_columns = 'ward.D2',
+        row_title = 'Pathway',
+        row_title_side = 'right',
+        # figure title
+        column_title = 'VIP by Drug Subtype 2',
+        column_title_gp = gpar(fontsize = 20, fontface = "bold"),
+        #column_title_side = 'bottom',
+        heatmap_legend_param = list(title = 'VIP score', color_bar = 'discrete'),
+        show_column_names = TRUE,
+        show_row_names = TRUE,
+        row_names_gp = gpar(fontsize = 8),
+        column_names_gp = gpar(fontsize = 8))
+
+draw(H2 + has, heatmap_legend_side = 'bottom')
+# must execute code in Console
+for(an in colnames(dc)) {
+    decorate_annotation(an, {
+        # annotation names on the right
+        #grid.text(an, unit(1, "npc") + unit(2, "mm"), 0.5, default.units = "npc", just = "left")
+        # annotation names on the left
+        grid.text(an, unit(0, "npc") - unit(2, "mm"), 0.5, default.units = "npc", just = "right")
+    })
+}
+```
+
+
+
+
+
+
+
+```{r}
+# Categorial data of CCA cell lines
+# assign categorical values
+# tissueType
+CCA <- c('K055','K100','K156','K213','K214','D068','D131','D138','HuCCT1','HUCCA1','MMNK1','RBE','SSP25','SSP25R','TFK1','TYBDC1','X055R','X214R','YSCCC')
+BRS <- c('MCF7','T47D','T47DR','ZR751')
+HEP <- c('Huh28')
+# normal
+NORM <- c('MCF7','T47D','ZR751','MMNK1')
+# Drug resistant
+RESIST <- c('SSP25R','X055R','X214R','T47DR')
+# Drug responses subgroups
+DRGROUP1 <- c('K213','K214','K156','HUCCA1','RBE','D138')
+DRGROUP2 <- c('K055','K100','D068','D131','HuCCT1','SSP25','TFK1','TYBDC1','YSCCC')
+```
+
+
+```{r}
+# ignore this section for now
+prepmat <- function(dat, cutoff) {
+  H.matrix <- dat
+  cf <- cutoff
+  # create heatmap displaying NES of KEGG pathways from all cell lines
+  Btable <- H.matrix
+  
+  DRGROUP1 <- c('K213','K214','K156','HUCCA1','RBE','D138')
+  DRGROUP2 <- c('K055','K100','D068','D131','HuCCT1','SSP25','TFK1','TYBDC1','YSCCC')
+  
+  matrix <- Btable %>% select_('ID','Description','Cell','NES') %>% droplevels()
+  matrix <- Btable %>% filter(Cell %in% c(DRGROUP1,DRGROUP2)) %>% select_('ID','Description','Cell','NES') %>% droplevels
+  
+  library(reshape2)
+  mx <- dcast(matrix, ID + Description ~ Cell, value.var = 'NES')
+  mx[is.na(mx)] <- 0
+  mxx <- mx[,3:17]
+  mxx <- as.data.frame(mxx)
+  rownames(mxx) <- mx$Description
+  # count number of zero per row and remove the rows of zero number is larger than 80% of cell lines
+  mxx <- mxx[rowSums(mxx == 0) <= (ncol(mxx)-floor(ncol(mxx)*cf)), ] 
+}
+```
+
+```{r}
+# ignore this section for now
+# generate NES matrix according to different database
+prepmat.HM <- prepmat(H.matrix,0.8)
+prepmat.BP <- prepmat(BP.matrix,0.8)
+prepmat.CP <- prepmat(CP.matrix,0.8)
+prepmat.KG <- prepmat(KG.matrix,0.8)
+prepmat.OS <- prepmat(OS.matrix,0.8)
+```
+
+```{r}
+# ignore this section for now
+library(RColorBrewer)
+CC <- colorspace::diverge_hsv(12)
+breaksList <- seq(-3,3, by = 0.50)
+
+# breaksList = seq(-2, 2, by = 4/11)
+# cols <- rev(RColorBrewer::brewer.pal(11,'RdYlGn'))
+
+library(pheatmap)
+ct_hp <- pheatmap(mxx, 
+                  scale = 'row',       # 'row' 'column' 'none'
+                  cluster_rows = TRUE,                    # boolean for cluster by rows
+                  cluster_cols = TRUE,                    # boolean for cluster by columns
+                  clustering_method = 'ward.D2',          # method for clustering
+                  clustering_distance_rows = 'euclidean', # use euclidean distance
+                  clustering_distance_cols = 'euclidean', # use euclidean distance
+                  cellwidth = 10,                         # set cell width
+                  cellheight = 6,                       # set cell height
+                  treeheight_row = 10,
+                  treeheight_col = 5,
+                  #cutree_rows = 3,                        # set break gap between rows
+                  #cutree_cols = 5,                        # set break gap between columns
+                  show_colnames = TRUE,                   # boolean for showing column names
+                  show_rownames = TRUE,                  # boolean for showing row names
+                  annotation_names_col = TRUE,            # boolean for showing column annotation
+                  main = 'Hallmarks Gene Sets of CCA',
+                  fontsize = 6,
+                  color = CC,                           # color codes used in this heatmap
+                  breaks = breaksList)
+```
+
+```{r}
+# ignore this section for now
+Heatmap.NES <- function(dat,title){
+  # reorder columns according to subtypes defined by drug responses
+  library(data.table)
+  mxx <- dat
+  mxx.re <- data.table(mxx)
+  setcolorder(mxx.re, c(DRGROUP1,DRGROUP2))
+  mxx.re <- as.data.frame(mxx.re)
+  rownames(mxx.re) <- rownames(mxx)
+  
+  main <- paste0(as.character(title),' Gene Set Enrichment Analysis')
+  
+  row.count <- nrow(mxx.re)
+  cell.height <- row.count/(4^(row.count/40))
+  if (cell.height < 0.8){
+    ch <- 0.8
+  } else{
+    ch <- cell.height
+  }
+
+library(pheatmap)
+ct_hpuc <- pheatmap(mxx.re, 
+                  scale = 'row',       # 'row' 'column' 'none'
+                  cluster_rows = TRUE,                    # boolean for cluster by rows
+                  cluster_cols = FALSE,                    # boolean for cluster by columns
+                  clustering_method = 'ward.D2',          # method for clustering
+                  clustering_distance_rows = 'euclidean', # use euclidean distance
+                  clustering_distance_cols = 'euclidean', # use euclidean distance
+                  cellwidth = 10,                         # set cell width
+                  cellheight = ch,                       # set cell height
+                  treeheight_row = 10,
+                  treeheight_col = 5,
+                  #cutree_rows = 3,                        # set break gap between rows
+                  #cutree_cols = 6,                        # set break gap between columns
+                  show_colnames = TRUE,                   # boolean for showing column names
+                  show_rownames = FALSE,                  # boolean for showing row names
+                  annotation_names_col = TRUE,            # boolean for showing column annotation
+                  main = main, 
+                  fontsize = 8,
+                  color = CC,                           # color codes used in this heatmap
+                  breaks = breaksList)
+}
+```
+
+```{r}
+# ignore this section for now
+fig_HM <- Heatmap.NES(prepmat.HM,'Hallmarks')
+fig_BP <- Heatmap.NES(prepmat.BP,'Biological Process')
+fig_KG <- Heatmap.NES(prepmat.KG,'KEGG pathway')
+fig_CP <- Heatmap.NES(prepmat.CP,'Canonical pathway')
+fig_OS <- Heatmap.NES(prepmat.OS,'Oncogenic signaling')
+```
+
+```{r}
+# ignore this section for now
+# select top 10 pathways up- and down-regulated
+H.matrix
+
+NES.K055 <- H.matrix %>% filter(Cell %in% c('K055'))
+
+topPathwaysUp <- fgseaRes[ES > 0][head(order(pval), n=10), pathway]
+topPathwaysDown <- fgseaRes[ES < 0][head(order(pval), n=10), pathway]
+topPathways <- c(topPathwaysUp, rev(topPathwaysDown))
+plotGseaTable(examplePathways[topPathways], exampleRanks, fgseaRes, 
+              gseaParam = 0.5)
+```
+
