@@ -1,0 +1,639 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(pls)
+library(data.table)
+library(UpSetR)
+```
+
+```{r}
+# This part will emphasize on calculating VIP scores
+# load CCA's drug response data 
+setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq')
+Sig <- read.csv('Matrix_for_raster_plots.csv', header = TRUE, stringsAsFactors = FALSE)
+drugResponses <- read.csv('GR50_87drug.csv', header = TRUE, stringsAsFactors = FALSE)
+drug.class <- read.csv('Drug_class.csv', header = TRUE, stringsAsFactors = FALSE)
+```
+
+
+```{r}
+# Assign colors to drug classes
+drug.class <- drug.class[order(drug.class$Drug),]
+
+class.unique <- unique(drug.class$Target)
+# assign color to each drug class
+library(RColorBrewer)
+mypalette1 <- brewer.pal(12,'Set3')
+mypalette2 <- brewer.pal(9,'Set1')
+mypalette3 <- brewer.pal(8,'Set2')
+mypalette4 <- brewer.pal(12,'Paired')
+
+drug.class$class.color[grepl('Akt',drug.class$Target, fixed = FALSE)] <- mypalette1[1]
+drug.class$class.color[grepl('CDK',drug.class$Target, fixed = FALSE)] <-  mypalette1[2]
+drug.class$class.color[grepl('EGFR',drug.class$Target, fixed = FALSE)] <- mypalette1[3]
+drug.class$class.color[grepl('IDH',drug.class$Target, fixed = FALSE)] <-  mypalette1[4]
+drug.class$class.color[grepl('JNK',drug.class$Target, fixed = FALSE)] <- mypalette1[5]
+drug.class$class.color[grepl('DNMT',drug.class$Target, fixed = FALSE)] <-  mypalette1[6]
+drug.class$class.color[grepl('FGFR',drug.class$Target, fixed = FALSE)] <- mypalette1[7]
+drug.class$class.color[grepl('mTOR',drug.class$Target, fixed = FALSE)] <-  mypalette1[8]
+drug.class$class.color[grepl('NF-kB',drug.class$Target, fixed = FALSE)] <- mypalette1[9]
+drug.class$class.color[grepl('PI3K',drug.class$Target, fixed = FALSE)] <-  mypalette1[10]
+drug.class$class.color[grepl('DNA|cycle|Pyrimidine|alkylating|microtubule',drug.class$Target, fixed = FALSE)] <- mypalette1[11]
+drug.class$class.color[grepl('Topo',drug.class$Target, fixed = FALSE)] <-  mypalette1[12]
+
+drug.class$class.color[grepl('Hh|Wnt',drug.class$Target, fixed = FALSE)] <- mypalette2[1]
+drug.class$class.color[grepl('Src|Abl',drug.class$Target, fixed = FALSE)] <-  mypalette2[2]
+drug.class$class.color[grepl('Met',drug.class$Target, fixed = FALSE)] <- mypalette2[3]
+drug.class$class.color[grepl('IAP',drug.class$Target, fixed = FALSE)] <-  mypalette2[4]
+drug.class$class.color[grepl('secretase',drug.class$Target, fixed = FALSE)] <- mypalette2[5]
+drug.class$class.color[grepl('HDAC',drug.class$Target, fixed = FALSE)] <-  mypalette2[6]
+drug.class$class.color[grepl('MEK',drug.class$Target, fixed = FALSE)] <- mypalette2[7]
+drug.class$class.color[grepl('JAK|STAT',drug.class$Target, fixed = FALSE)] <-  mypalette2[8]
+drug.class$class.color[grepl('p38',drug.class$Target, fixed = FALSE)] <- mypalette2[9]
+
+drug.class$class.color[grepl('PARP',drug.class$Target, fixed = FALSE)] <- mypalette3[1]
+drug.class$class.color[grepl('MDM2',drug.class$Target, fixed = FALSE)] <-  mypalette3[2]
+drug.class$class.color[grepl('IGF',drug.class$Target, fixed = FALSE)] <- mypalette3[3]
+drug.class$class.color[grepl('IMPDH',drug.class$Target, fixed = FALSE)] <-  mypalette2[4]
+drug.class$class.color[grepl('DHFR',drug.class$Target, fixed = FALSE)] <- mypalette3[5]
+drug.class$class.color[grepl('HDAC',drug.class$Target, fixed = FALSE)] <-  mypalette3[6]
+drug.class$class.color[grepl('PDGFR',drug.class$Target, fixed = FALSE)] <- mypalette3[7]
+drug.class$class.color[grepl('BET',drug.class$Target, fixed = FALSE)] <-  mypalette3[8]
+
+drug.class$class.color[grepl('GFGR',drug.class$Target, fixed = FALSE)] <- mypalette4[1]
+drug.class$class.color[grepl('proteasome',drug.class$Target, fixed = FALSE)] <-  mypalette4[2]
+drug.class$class.color[grepl('RTK',drug.class$Target, fixed = FALSE)] <- mypalette4[3]
+drug.class$class.color[grepl('ALK',drug.class$Target, fixed = FALSE)] <-  mypalette4[4]
+drug.class$class.color[grepl('RAF',drug.class$Target, fixed = FALSE)] <-  mypalette4[5]
+
+drug.class$class.color[is.na(drug.class$class.color)] <- '#FFFFFF'
+
+drug.class$Drug <- gsub("\\-", ".", drug.class$Drug)
+drug.class$Drug <- gsub("\\ ", ".", drug.class$Drug)
+drug.class$Drug <- gsub("\\ ",".", drug.class$Drug)
+drug.class$Drug <- gsub("\\.$","", drug.class$Drug)
+```
+
+
+```{r}
+## VIP returns all VIP values for all variables and all number of components,
+## as a ncomp x nvars matrix.
+VIP <- function(object) {
+  if (object$method != "oscorespls")
+    stop("Only implemented for orthogonal scores algorithm.  Refit with 'method = \"oscorespls\"'")
+  if (nrow(object$Yloadings) > 1)
+    stop("Only implemented for single-response models")
+  
+  SS <- c(object$Yloadings)^2 * colSums(object$scores^2)
+  Wnorm2 <- colSums(object$loading.weights^2)
+  SSW <- sweep(object$loading.weights^2, 2, SS / Wnorm2, "*")
+  sqrt(nrow(SSW) * apply(SSW, 1, cumsum) / cumsum(SS))
+}
+
+
+## VIPjh returns the VIP of variable j with h components
+VIPjh <- function(object, j, h) {
+  if (object$method != "oscorespls")
+    stop("Only implemented for orthogonal scores algorithm.  Refit with 'method = \"oscorespls\"'")
+  if (nrow(object$Yloadings) > 1)
+    stop("Only implemented for single-response models")
+  
+  b <- c(object$Yloadings)[1:h]
+  Ta <- object$scores[,1:h, drop = FALSE]
+  SS <- b^2 * colSums(Ta^2)
+  W <- object$loading.weights[,1:h, drop = FALSE]
+  Wnorm2 <- colSums(W^2)
+  sqrt(nrow(W) * sum(SS * W[j,]^2 / Wnorm2) / sum(SS))
+}
+```
+
+
+```{r}
+# In this section, we will calculate VIP scores by using 'orscorepls' (NIPALS) algorithm
+# List of CCA cell lines used in calculation
+S1 <- c('K213','K214','K156','HUCCA1','RBE','D138')
+S2 <- c('HuCCT1','TYBDC1','K055','D068','D131','TFK1','K100','YSCCC','SSP25')
+CCA <- c(S1,S2)
+
+# First, we have to prepare X input data frame
+library(reshape2)
+P <- dcast(Sig, ID ~ factor(Cell), value.var = 'NES') 
+rownames(P) <- P[,1]
+P1 <- P[,-c(1)]
+P1[is.na(P1)] <- 0
+P2 <- P1 %>% select_(.dots = S1)
+Input.pathway <- t(P2)
+Input.pathway <- as.data.frame(Input.pathway)
+
+# And prepare Y input data frame
+colnames(drugResponses)[1] <- 'Cell'
+rownames(drugResponses) <- drugResponses$Cell
+Q <- drugResponses[,-1] %>% subset(rownames(drugResponses) %in% S1)
+Input.drug <- Q #drmxTrain
+```
+
+
+```{r}
+# CCA subtype 1
+# obtain number of pathways
+num.pathway <- ncol(Input.pathway)
+# obtain number of drugs
+num.drug <- ncol(Input.drug)
+```
+
+```{r}
+# CCA subtype 1
+# Use this function to find predicted values using PLSR model
+vip.drug <- lapply(1:num.drug, function(n) {
+  # define independent variable
+  X <- Input.pathway
+  # define dependent 
+  Y <- as.data.frame(Input.drug[n])
+  newdat <- cbind(Y, GE = I(as.matrix(X))[match(rownames(Y), rownames(X)), drops = TRUE])  # this line is to create data input for pls package***
+  num.prcomp <- nrow(newdat)
+  colnames(newdat)[1] <- 'Drug'
+  myplsr <- plsr(Drug ~ GE, num.prcomp-1, data = newdat, 
+                 method = 'oscorespls',
+                 scale = FALSE,
+                 validation = 'LOO')
+  # calculate VIP score of variable (pathway) per GR50 of the drug tested
+  vip.score <- lapply(1:num.pathway, function(x) VIPjh(myplsr,x,myplsr$ncomp))
+  vip.out <- as.data.frame(do.call(rbind,vip.score))
+  colnames(vip.out)[1] <- colnames(Y)
+  
+  # calculate coef value of linear regression model based on observed and predicted variables from PC1 from PLSR
+  add.sign <- lapply(1:num.pathway, function(p) {
+    df2 <- data.frame('x' = newdat[,2][,p], 
+                      'y' = newdat[,1])
+    # create linear regression model
+    df2.lm <- lm(y ~ x, data = df2)
+    # extract coefficient value
+    m <- df2.lm$coefficients[2]
+    # determine whether coeff m is positive or negative
+    value <- ifelse(m < 0, -vip.out[p,1], vip.out[p,1])
+    return(value)
+  })
+  vip.sign <- do.call(rbind,add.sign)
+  vip.sign <- as.data.frame(vip.sign)
+  colnames(vip.sign)[1] <- colnames(Y)
+  
+  # collect R2 from PLSR model
+  dat.R2 <- R2(myplsr)
+  # collect Mean Squared Prediction Error from PLSR model
+  dat.MSEP <- MSEP(myplsr)
+  
+  vip.outputs <- list('VIPtable' = vip.out,
+                      'R2' = dat.R2,
+                      'MSPE' = dat.MSEP,
+                      'VIPsign' = vip.sign)
+  return(vip.outputs)
+})
+
+# VIP score matrix without sign
+temp.mat <- lapply(1:length(vip.drug), function(q) {
+  VIPscore <- vip.drug[[q]]$VIPtable
+})
+
+VIP.matrix <- do.call(cbind,temp.mat)
+rownames(VIP.matrix) <- colnames(Input.pathway)
+
+# VIP score matrix with sign
+temp.mat2 <- lapply(1:length(vip.drug), function(r) {
+  VIPsign <- vip.drug[[r]]$VIPsign
+})
+
+VIPsign.matrix <- do.call(cbind,temp.mat2)
+rownames(VIPsign.matrix) <- colnames(Input.pathway)
+
+```
+
+
+```{r}
+# CCA subtype 1
+# Prepare VIP score data frame for heatmap
+# convert VIPsign to matrix class
+df.VIP <- as.matrix(VIPsign.matrix)
+# remove column in which entire rows contain NaN
+df.VIP[is.nan(df.VIP)] <- 0
+df.VIP[is.na(df.VIP)] <- 0
+# Set threshold for VIP scores
+df.VIP2 <- df.VIP
+df.VIP2[df.VIP2 > -1 & df.VIP2 < 1] <- 0
+
+# Convert to data frame
+dff <- as.data.frame(df.VIP2)
+```
+
+
+```{r}
+# CCA subtype 1
+# Create drug annotation
+Z <- mapply(function(x,y) type = c(x = y), drug.class$Drug, drug.class$class.color)
+names(Z) <- gsub("\\.x", "", names(Z))
+names(Z) <- gsub("\\-",".", names(Z))
+names(Z) <- gsub("\\ ",".", names(Z))
+
+tdff <- t(dff)
+tdff <- as.data.frame(tdff)
+
+insect <- intersect(rownames(tdff),drug.class$Drug)
+
+sel.df <- tdff %>% subset(rownames(tdff) %in% insect)
+
+sel.df$type <- drug.class %>% subset(Drug %in% insect) %>% select_('class.color')
+
+sel.Z <- Z %>% subset(names(Z) %in% insect)
+
+annotation <- data.frame(Var1 = factor(rownames(sel.df), labels = c(sel.Z)))
+rownames(annotation) <- rownames(sel.df) # check out the row names of annotation
+col_order <- order(sel.df$type, decreasing = TRUE)
+dat.anno <- annotation[col_order,,drop = FALSE]
+```
+
+
+```{r}
+# CCA subtype 1
+input <- t(sel.df[,1:48])
+data <- sel.df[col_order,, drop = FALSE]
+tdata <- t(data[,1:48])
+tdata2 <- tdata
+# Exclude hallmarks with less than 50% coverage
+tdata3.1 <- tdata2[rowSums(tdata2 == 0) <= floor(0.50*(ncol(tdata2))), ]
+
+```
+
+
+```{r}
+# CCA subtype 1
+# Use pheatmap
+cc <- rev(RColorBrewer::brewer.pal(7,'RdBu'))
+
+library(pheatmap)
+ct_hp1 <- pheatmap(tdata3.1, 
+                  scale = 'none',       # 'row' 'column' 'none'
+                  cluster_rows = TRUE,                    # boolean for cluster by rows
+                  cluster_cols = FALSE,                 # boolean for cluster by columns
+                  clustering_method = 'ward.D2',          # method for clustering
+                  clustering_distance_rows = 'euclidean', # use euclidean distance
+                  clustering_distance_cols = 'euclidean', # use euclidean distance
+                  cellwidth = 8,                         # set cell width
+                  cellheight = 12,                       # set cell height
+                  treeheight_row = 10,
+                  treeheight_col = 5,
+                  cutree_rows = 3,                        # set break gap between rows
+                  #cutree_cols = 5,                        # set break gap between columns
+                  show_colnames = TRUE,                   # boolean for showing column names
+                  show_rownames = TRUE,                   # boolean for showing row names
+                  #annotation = dat.anno,
+                  main = 'VIP scores of Subtype 1',
+                  fontsize = 7,
+                  color = cc)
+```
+
+
+```{r}
+# CCA subtype 2
+# Prepare data for CCA subtype 2
+P2.2 <- P1 %>% select_(.dots = S2)
+Input.pathway2 <- t(P2.2)
+Input.pathway2 <- as.data.frame(Input.pathway2)
+
+# And prepare Y input data frame
+colnames(drugResponses)[1] <- 'Cell'
+rownames(drugResponses) <- drugResponses$Cell
+Q2 <- drugResponses[,-1] %>% subset(rownames(drugResponses) %in% S2)
+Input.drug2 <- Q2 #drmxTrain
+
+```
+
+
+```{r}
+# CCA subtype 2
+# obtain number of pathways
+num.pathway <- ncol(Input.pathway2)
+# obtain number of drugs
+num.drug <- ncol(Input.drug2)
+```
+
+
+```{r}
+# CCA subtype 2
+# Use this function to find predicted values using PLSR model
+vip.drug <- lapply(1:num.drug, function(n) {
+  # define independent variable
+  X <- Input.pathway2
+  # define dependent 
+  Y <- as.data.frame(Input.drug2[n])
+  newdat <- cbind(Y, GE = I(as.matrix(X))[match(rownames(Y), rownames(X)), drops = TRUE])  # this line is to create data input for pls package***
+  num.prcomp <- nrow(newdat)
+  colnames(newdat)[1] <- 'Drug'
+  myplsr <- plsr(Drug ~ GE, num.prcomp-1, data = newdat, 
+                 method = 'oscorespls',
+                 scale = FALSE,
+                 validation = 'LOO')
+  # calculate VIP score of variable (pathway) per GR50 of the drug tested
+  vip.score <- lapply(1:num.pathway, function(x) VIPjh(myplsr,x,myplsr$ncomp))
+  vip.out <- as.data.frame(do.call(rbind,vip.score))
+  colnames(vip.out)[1] <- colnames(Y)
+  
+  # calculate coef value of linear regression model based on observed and predicted variables from PC1 from PLSR
+  add.sign <- lapply(1:num.pathway, function(p) {
+    df2 <- data.frame('x' = newdat[,2][,p], 
+                      'y' = newdat[,1])
+    # create linear regression model
+    df2.lm <- lm(y ~ x, data = df2)
+    # extract coefficient value
+    m <- df2.lm$coefficients[2]
+    # determine whether coeff m is positive or negative
+    value <- ifelse(m < 0, -vip.out[p,1], vip.out[p,1])
+    return(value)
+  })
+  vip.sign <- do.call(rbind,add.sign)
+  vip.sign <- as.data.frame(vip.sign)
+  colnames(vip.sign)[1] <- colnames(Y)
+  
+  # collect R2 from PLSR model
+  dat.R2 <- R2(myplsr)
+  # collect Mean Squared Prediction Error from PLSR model
+  dat.MSEP <- MSEP(myplsr)
+  
+  vip.outputs <- list('VIPtable' = vip.out,
+                      'R2' = dat.R2,
+                      'MSPE' = dat.MSEP,
+                      'VIPsign' = vip.sign)
+  return(vip.outputs)
+})
+
+# VIP score matrix without sign
+temp.mat <- lapply(1:length(vip.drug), function(q) {
+  VIPscore <- vip.drug[[q]]$VIPtable
+})
+
+VIP.matrix <- do.call(cbind,temp.mat)
+rownames(VIP.matrix) <- colnames(Input.pathway)
+
+# VIP score matrix with sign
+temp.mat2 <- lapply(1:length(vip.drug), function(r) {
+  VIPsign <- vip.drug[[r]]$VIPsign
+})
+
+VIPsign.matrix <- do.call(cbind,temp.mat2)
+rownames(VIPsign.matrix) <- colnames(Input.pathway)
+
+```
+
+
+```{r}
+# CCA subtype 1
+# Prepare VIP score data frame for heatmap
+# convert VIPsign to matrix class
+df.VIP <- as.matrix(VIPsign.matrix)
+# remove column in which entire rows contain NaN
+df.VIP[is.nan(df.VIP)] <- 0
+df.VIP[is.na(df.VIP)] <- 0
+# Set threshold for VIP scores
+df.VIP2 <- df.VIP
+df.VIP2[df.VIP2 > -1 & df.VIP2 < 1] <- 0
+
+# Convert to data frame
+dff <- as.data.frame(df.VIP2)
+```
+
+
+```{r}
+# CCA subtype 2
+# Create drug annotation
+Z <- mapply(function(x,y) type = c(x = y), drug.class$Drug, drug.class$class.color)
+names(Z) <- gsub("\\.x", "", names(Z))
+names(Z) <- gsub("\\-",".", names(Z))
+names(Z) <- gsub("\\ ",".", names(Z))
+names(Z) <- gsub("\\.$", "", names(Z))
+
+tdff <- t(dff)
+tdff <- as.data.frame(tdff)
+
+insect <- intersect(rownames(tdff),drug.class$Drug)
+
+sel.df <- tdff %>% subset(rownames(tdff) %in% insect)
+
+sel.df$type <- drug.class %>% subset(Drug %in% insect) %>% select_('class.color')
+
+sel.Z <- Z %>% subset(names(Z) %in% insect)
+
+annotation <- data.frame(Var1 = factor(rownames(sel.df), labels = c(sel.Z)))
+rownames(annotation) <- rownames(sel.df) # check out the row names of annotation
+col_order <- order(sel.df$type, decreasing = TRUE)
+dat.anno <- annotation[col_order,,drop = FALSE]
+```
+
+
+```{r}
+# CCA subtype 2
+input <- t(sel.df[,1:48])
+data <- sel.df[col_order,, drop = FALSE]
+tdata <- t(data[,1:48])
+tdata2 <- tdata
+# Exclude hallmarks with less than 50% coverage
+tdata3.2 <- tdata2[rowSums(tdata2 == 0) <= floor(0.50*(ncol(tdata2))), ]
+
+```
+
+
+```{r}
+# CCA subtype 2
+cc <- rev(RColorBrewer::brewer.pal(7,'RdBu'))
+
+library(pheatmap)
+ct_hp2 <- pheatmap(tdata3.2, 
+                  scale = 'none',       # 'row' 'column' 'none'
+                  cluster_rows = TRUE,                    # boolean for cluster by rows
+                  cluster_cols = TRUE,                    # boolean for cluster by columns
+                  clustering_method = 'ward.D2',          # method for clustering
+                  clustering_distance_rows = 'euclidean', # use euclidean distance
+                  clustering_distance_cols = 'euclidean', # use euclidean distance
+                  cellwidth = 8,                         # set cell width
+                  cellheight = 12,                       # set cell height
+                  treeheight_row = 10,
+                  treeheight_col = 5,
+                  cutree_rows = 4,                        # set break gap between rows
+                  #cutree_cols = 5,                        # set break gap between columns
+                  show_colnames = TRUE,                   # boolean for showing column names
+                  show_rownames = TRUE,                   # boolean for showing row names
+                  #annotation = dat.anno,
+                  main = 'VIP scores of Subtype 2',
+                  fontsize = 7,
+                  color = cc)
+```
+
+
+```{r}
+# CCA subtype 1 
+# Use ComplexHeatmap
+library(ComplexHeatmap)
+# First, create annotations
+temp <- drug.class %>% filter(Drug %in% insect)
+ha_column = HeatmapAnnotation(df = data.frame(type1 = c(temp$Drug)), 
+    col = list(type1 = c(sel.Z)))
+
+```
+
+
+```{r}
+# Plot heatmap displaying VIP scores (without sign)
+Ht1 <- Heatmap(tdata3.1,
+        cluster_rows = TRUE,
+        clustering_distance_rows = 'euclidean',
+        clustering_method_rows = 'complete',
+        cluster_columns = TRUE,
+        clustering_distance_columns = 'euclidean',
+        clustering_method_columns = 'complete',
+        col = cc,
+        row_title = '',
+        row_title_side = 'right',
+        # figure title
+        column_title = 'VIP by Drug Subtype 1',
+        column_title_gp = gpar(fontsize = 20, fontface = "bold"),
+        #column_title_side = 'bottom',
+        heatmap_legend_param = list(title = 'VIP score', color_bar = 'discrete'),
+        show_column_names = TRUE,
+        show_row_names = TRUE,
+        row_names_gp = gpar(fontsize = 8),
+        column_names_gp = gpar(fontsize = 8),
+        top_annotation = ha_column)
+
+```
+
+
+```{r}
+Draw.Ht1 <- draw(Ht1, show_annotation_legend = FALSE, 
+                 heatmap_legend_side = 'left',
+                 annotation_legend_side = 'left')
+# save as dimension 1260 x 400 pixels
+```
+
+
+```{r}
+# Plot heatmap displaying VIP scores (without sign)
+Ht2 <- Heatmap(tdata3.2,
+        cluster_rows = TRUE,
+        clustering_distance_rows = 'euclidean',
+        clustering_method_rows = 'complete',
+        cluster_columns = TRUE,
+        clustering_distance_columns = 'euclidean',
+        clustering_method_columns = 'complete',
+        col = cc,
+        row_title = '',
+        row_title_side = 'right',
+        # figure title
+        column_title = 'VIP by Drug Subtype 2',
+        column_title_gp = gpar(fontsize = 20, fontface = "bold"),
+        #column_title_side = 'bottom',
+        heatmap_legend_param = list(title = 'VIP score', color_bar = 'discrete'),
+        show_column_names = TRUE,
+        show_row_names = TRUE,
+        row_names_gp = gpar(fontsize = 8),
+        column_names_gp = gpar(fontsize = 8),
+        top_annotation = ha_column)
+
+```
+
+```{r}
+Draw.Ht2 <- draw(Ht2, show_annotation_legend = FALSE, 
+                 heatmap_legend_side = 'left',
+                 annotation_legend_side = 'left')
+# save as dimension 1260 x 400 pixels
+```
+
+
+```{r}
+# Get unique Hallmarks
+HM1 <- rownames(tdata3.1)
+HM2 <- rownames(tdata3.2)
+
+u.HM1 <- setdiff(HM1,HM2)
+u.HM2 <- setdiff(HM2,HM1)
+
+# Get core_enrichment of specific Hallmarks of CCA subtype 1 from Sig data frame
+gene.S1 <- Sig %>% subset(ID %in% u.HM1 & Cell %in% S1) %>% select_('ID','Cell','core_enrichment')
+
+gene.S2 <- Sig %>% subset(ID %in% u.HM2 & Cell %in% S2) %>% select_('ID','Cell','core_enrichment')
+```
+
+
+```{r}
+# We will get a list of genes from particular Hallmark that overlap across all CCA subtype 1 cells
+getGenes <- function(dat) {
+  # find column name  = ID
+  loc.ID <- which(colnames(gene.S1) == 'ID')
+  # use location number to specify 'ID' column
+  list.HM <- unique(dat[,loc.ID])
+  gene.in.HM <- lapply(1:length(list.HM), function(y) {
+    # Extract Hallmarks with similar ID name
+    hmvec <- dat %>% subset(ID %in% list.HM[y])
+    # Separate list of genes a vector containing genes
+    genevec <- as.data.frame(rbindlist(lapply(1:nrow(hmvec), function(x)
+      strsplit(hmvec[x,]$core_enrichment,"/", fixed = FALSE))))
+    # Combine list of overlapping genes into single-column data frame
+    genes <- unique(data.frame(genevec[duplicated(genevec$V1),]))
+    # Modify column name a Hallmark
+    colnames(genes) <- list.HM[y]
+    return(genes)
+  })
+}
+
+```
+
+
+```{r}
+# Get overlapping genes from each hallmark in CCA subtype 1 and 2 cells
+Yo <- getGenes(gene.S1)
+Lo <- getGenes(gene.S2)
+```
+
+
+```{r}
+# Prepare data frame to find overlapping genes in hallmarks identified in CCA subtype 1
+t1 <- lapply(1:length(Yo), function(n) data.frame('Gene' = Yo[[n]][[1]], 'HM' = rep(names(Yo[[n]]), nrow(Yo[[n]])), 'Subtype' = rep(1, nrow(Yo[[n]])), 'Value' = rep(1, nrow(Yo[[n]]))))
+
+t1all <- do.call(rbind,t1)
+
+# Prepare data frame to find overlapping genes in hallmarks identified in CCA subtype 1
+t2 <- lapply(1:length(Lo), function(n) data.frame('Gene' = Lo[[n]][[1]], 'HM' = rep(names(Lo[[n]]), nrow(Lo[[n]])), 'Subtype' = rep(2, nrow(Lo[[n]])), 'Value' = rep(1, nrow(Lo[[n]]))))
+
+t2all <- do.call(rbind,t2)
+
+# We will combine the two data frames into one
+tall <- rbind(t1all,t2all)
+
+# 
+# Upset package requires specific data frame. So, we need to transform long table to wide table
+newtall <- dcast(tall, Gene+Subtype ~ HM, value.var = 'Value')
+newtall[is.na(newtall)] <- 0
+```
+
+```{r}
+# Subset data CCA subtype 1
+newtall.S1 <- newtall %>% subset(Subtype == 1)
+# Drop Subtype column
+upset.S1 <- newtall.S1[,-which(colnames(newtall.S1) == 'Subtype')]
+# Draw upset plot
+N1 <- upset(upset.S1)
+```
+
+
+```{r}
+# Subset data CCA subtype 2
+newtall.S2 <- newtall %>% subset(Subtype == 2)
+# Drop Subtype column
+upset.S2 <- newtall.S2[,-which(colnames(newtall.S2) == 'Subtype')]
+# Draw upset plot
+N2 <- upset(upset.S2)
+```
+
