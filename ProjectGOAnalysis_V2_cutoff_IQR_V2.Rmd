@@ -46,10 +46,10 @@ myGR50 <- read.csv('SubMedianLog10GR50.csv', header = TRUE, stringsAsFactors = F
 # apply cut-off at percentile 50th 
 # select only CCA cell lines
 # Drug responses subgroups
-DRGROUP1 <- c('K213','K214','K156','HUCCA1','RBE','D138')
-DRGROUP2 <- c('K055','K100','D068','D131','HuCCT1','SSP25','TFK1','TYBDC1','YSCCC')
+S1 <- c('K213','K214','K156','HUCCA1','RBE','D138')
+S2 <- c('K055','K100','D068','D131','HuCCT1','SSP25','TFK1','TYBDC1','YSCCC')
 # combind cell group 1 + group 2
-cell.CCA <- c(DRGROUP1,DRGROUP2)
+cell.CCA <- c(S1,S2)
 # find column locations of cells
 cell.location <- which(colnames(df) %in% cell.CCA)
 # subset cells using column locations
@@ -221,6 +221,7 @@ df.B <- addENTREZID(df.new2)
 colnames(df.B)[c(1,2)] <- c('NAME','DESCRIPTION')
 # save file
 #write.table(df.B, file = 'GSEA_Matrix_Broad.txt', row.names = FALSE, quote = FALSE, sep = "\t")
+
 ```
 
 ```{r}
@@ -305,6 +306,7 @@ myenrich <- function(df,col.ENTREZID,col.cell,p.cutoff,db,f.switch){
 }
 ```
 
+
 ```{r}
 # We are focusing on GSEA using Hallmarks data set
 # define input data frame
@@ -348,6 +350,12 @@ HT2 <- mutate(HT, FACTOR = ifelse(Cell %in% S1, 'Subtype1',
                                   ifelse(Cell %in% S2, 'Subtype2',
                                          ifelse(Cell %in% c('Subtype_1.2'), 'CellType',
                                                 ifelse(Cell %in% c('TAK733_S.R','PD0325901_S.R'), 'MEKi','SRCi')))))
+
+```
+
+```{r}
+setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq')
+write.csv(HT2,'Hallmarks_Matrix_Original.csv',row.names = FALSE, quote = FALSE)
 ```
 
 
@@ -356,7 +364,7 @@ HT2 <- mutate(HT, FACTOR = ifelse(Cell %in% S1, 'Subtype1',
 sel25 <- HT2 %>% filter(qvalues < 0.25)
 
 # subset data using column names
-Sig <- sel25 %>% select_('ID','Cell','FACTOR','NES','p.adjust','qvalues')
+Sig <- sel25 %>% select_('ID','Cell','FACTOR','NES','p.adjust','qvalues','core_enrichment')
 # convert p-value to significant level (smaller p-value, the larger number)
 Sig$log2.p.adjust <- -log2(Sig$p.adjust)
 # assign  factor level to cell
@@ -365,12 +373,12 @@ Sig$FACTOR <- factor(Sig$FACTOR)
 
 Sig$facet = factor(Sig$FACTOR, levels = c('Subtype1','Subtype2','CellType','MEKi','SRCi'))
 
-#write.table(Sig, file = 'NES_KG.csv', row.names = FALSE, quote = FALSE)
+
 ```
 
 ```{r}
-# setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq')
-# write.csv(Sig, file = 'Matrix_for_raster_plots.csv', row.names = FALSE, quote = FALSE)
+setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq')
+write.csv(Sig, file = 'Matrix_for_raster_plots.csv', row.names = FALSE, quote = FALSE)
 
 ```
 
