@@ -1169,3 +1169,177 @@ ggsave(Fig5B,
 
 dev.off()
 ```
+
+We wanted to know the performance of CCA subtype biomarkers in predicting other drug response subtypes using ROC AUC.
+We built SVM model from expression levels of biomarkers of individual drug.
+Then, we tested the model using expression levels of biomarkers from CCA subtypes.
+```{r}
+TestDrugs <- c('Subtype','Saracatinib','TAK733','Gemcitabine','Cisplatin')
+dat.CF <- Classifier.genes
+dat.EX <- Expression.genes
+
+# List of various cell line subtypes
+# from drug response table, we prepared CCA subtype table
+my.ccaSR <- drugSR %>% group_by(Cell,CCA.Subgroup) %>% summarise()
+# and prepared organ similarity table
+my.organSR <- drugSR %>% group_by(Cell,Organ.Subgroup) %>% summarise()
+
+myROC <- lapply(1:length(TestDrugs), function(n) {
+  # n <- 1
+  MyDrug <- TestDrugs[n]
+  # extract biomarkers
+  dat.CF$Drug <- gsub('_1.2','',dat.CF$Drug) %>% trimws(.,which = 'both')
+  dat.EX$Drug <- gsub('_1.2','',dat.EX$Drug) %>% trimws(.,which = 'both')
+  ### use SVM for prediction of CCA subgroup classification
+  # use drug as training set
+  TrainSet <- dat.CF %>% subset(Drug == MyDrug)
+  # use CCA subtype as testing set
+  TestSet <- dat.CF %>% subset(Drug == 'Subtype')
+  # retrieved expression levels of biomarkers in training set
+  train.expr <- dat.EX %>% subset(Drug == MyDrug) %>% dplyr::select(-one_of('Drug'))
+  train.m <- as.data.frame(t(train.expr))
+  # convert to PCA
+  set.seed(100)
+  train.pca <- prcomp(train.m, scale. = FALSE)
+  eigs <- train.pca$sdev^2
+  Cumulative = cumsum(eigs)/sum(eigs)
+  idx <- which(Cumulative >= 0.8)[1]
+  
+  # select PC given cumsum > 0.8
+  train.pcax <- train.pca$x
+  train.pcax <- train.pcax[,c(1:idx)] %>% as.data.frame()
+  
+  # List of various cell line subtypes
+  # from drug response table, we prepared CCA subtype table
+  if(MyDrug == 'Subtype'){
+  dat.Class <- drugSR %>% group_by(Cell,CCA.Subgroup) %>% summarise()
+  dat.Class$CCA.Subgroup <- ifelse(dat.Class$CCA.Subgroup == 'Subgroup 1','Sensitive','Resistant')
+  colnames(dat.Class)[2] <- 'Class'
+  } else if (MyDrug == 'OrgSubtype') {
+  # and prepared organ similarity table
+  dat.Class <- drugSR %>% group_by(Cell,Organ.Subgroup) %>% summarise()
+  dat.Class$Organ.Subgroup <- ifelse(dat.Class$Organ.Subgroup == 'liver-like','Sensitive','Resistant')
+  colnames(dat.Class)[2] <- 'Class'
+  } else {
+  dat.Class <- drugSR %>% subset(Drug == MyDrug) %>% dplyr::select(Cell,Class.KDE)
+  colnames(dat.Class)[2] <- 'Class'
+  }
+  # add cell line subtypes to expression level dataframe
+  train.pcax$Class <- dat.Class$Class[match(rownames(train.pcax),dat.Class$Cell)]
+  # add factor levels
+  train.pcax$Class <- factor(train.pcax$Class, levels = c('Sensitive','Resistant'))
+  
+  # for reproducibility
+  set.seed(100)
+  require(caret)
+  # set SVM grid search
+  SVMgrid <- expand.grid(sigma = c(0.001354683), C = c(1))
+  # set training parameters
+  TrainCtrl1 <- caret::trainControl(method = 'LOOCV', 
+                             number = 100,
+                             # repeats = 100,
+                             summaryFunction = twoClassSummary,
+                             # search = 'grid',
+                             savePredictions = TRUE,
+                             sampling = 'smote',
+                             classProbs = TRUE,
+                             verbose = FALSE)
+  # run SVM model
+  modelSvmRRB <- caret::train(Class ~ ., 
+                       data = train.pcax, 
+                       method = 'svmRadial', 
+                       trControl = TrainCtrl1,
+                       tuneGrid = SVMgrid,
+                       preProc = c('scale','YeoJohnson'),
+                       metric = 'ROC',
+                       verbose = FALSE)
+  
+  # extract test data set. select only apinya and cca datasets
+  test.expr <- dat.EX %>% subset(Drug == 'Subtype') %>% dplyr::select(-one_of('Drug'))
+  test.m <- as.data.frame(t(test.expr))
+  # convert to PCA
+  set.seed(100)
+  test.pca <- prcomp(test.m, scale. = FALSE)
+  
+  test.pcax <- test.pca$x
+  test.pcax <- test.pcax[,c(1:idx)] %>% as.data.frame()
+
+  # run prediction using SVM model
+  PredictedTest <- predict(object = modelSvmRRB,
+                           newdata = test.pcax, 
+                           type = 'prob') %>% as.data.frame()
+  # assign predicted class to samples
+  PredictedTest$Pred <- names(PredictedTest)[1:2][apply(PredictedTest[,1:2],1,which.max)]
+  rownames(PredictedTest) <- rownames(test.pcax)
+  
+  PredictedTest$Obsv <- dat.Class$Class[match(rownames(PredictedTest),dat.Class$Cell)]
+
+  ####
+  # performance in terms of true and false positive rates
+  require(ROCR)
+  predict.rf <- prediction(PredictedTest[,1],PredictedTest$Obsv)
+  perform.rf <- performance(predict.rf,'tpr','fpr')
+  auc_perform <- performance(predict.rf,measure = 'auc')
+  auc_ROCR <- auc_perform@y.values[[1]]
+  # create ROC dataframe
+  df.roc.rf <- data.frame(perform.rf@x.values,perform.rf@y.values)
+  colnames(df.roc.rf) <- c('Specificity','Sensitivity')
+  df.roc.rf$Test <- rep(MyDrug,nrow(df.roc.rf))
+  df.roc.rf$AUC <- rep(auc_ROCR,nrow(df.roc.rf))
+  return(df.roc.rf)
+})
+
+
+```
+
+Combine ROC dataframes
+```{r}
+# combine all df.roc
+df.roc.all <- do.call(rbind,myROC)
+# assign factor level
+df.roc.all$Test <- factor(df.roc.all$Test, levels = c('Subtype','Saracatinib','TAK733','Gemcitabine','Cisplatin'))
+# build report table
+tab.roc <- df.roc.all %>% dplyr::select(Test,AUC) %>% unique()
+
+```
+
+Plot ROC using ggplot2 Fig5C
+```{r}
+require(ggplot2)
+Fig5C <- ggplot(df.roc.all %>% subset(!Test == 'Subtype'),
+                   aes(x = Specificity, y = Sensitivity
+                       , color = Test)) + 
+  geom_line(size = 2, alpha = 0.7) +
+  geom_segment(aes(x = 0,xend = 1,y = 0,yend = 1), color = 'gray50', alpha = 0.5, lty = 'dashed') +
+  scale_color_manual( name = 'Drugs (AUC)',
+                       labels = c('Saracatinib (0.98)','TAK733 (0.94)',
+                                  'Gemcitabine (0.66)','Cisplatin (0.55)'),
+                       values = c('#e41a1c','#377eb8','#984ea3','#ff7f00')) +
+  theme_bw() +
+  theme(
+    text = element_text(size = 10),
+    axis.text = element_text(size = 8),
+    axis.title = element_text(size = 10)
+  ) +
+  labs(title = "", 
+       x = "False Positive Rate (1-Specificity)", 
+       y = "True Positive Rate (Sensitivity)",
+       color = 'Drug Test')
+
+```
+
+Save ROC results Figure 5C.
+```{r}
+setwd('~/CCA/module3_results')
+
+ggsave(Fig5C,
+       filename = 'Fig5C_20200621.pdf',
+       height = 8,
+       width = 12,
+       units = 'cm',
+       device = cairo_pdf
+       )
+
+dev.off()
+```
+
