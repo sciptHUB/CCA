@@ -930,14 +930,14 @@ bio.hm <- Heatmap(as.matrix(mat), # my.dt.sorted
                   name = 'expr.level' # legend title
 )
 
-fig4A <- ComplexHeatmap::draw(fq.hm + bio.hm + ha.row.ratio + ha.row.pval + ha.row.VIPrf + ha.row.VIPplsda)
+fig5A <- ComplexHeatmap::draw(fq.hm + bio.hm + ha.row.ratio + ha.row.pval + ha.row.VIPrf + ha.row.VIPplsda)
 
 ```
 
-Draw Figure 4A
+Draw Figure 5A
 ```{r}
 setwd('~/CCA/module3_results')
-pdf(paste0('BiomarkersIdentification_Fig4A_byPval_20200619.pdf'),
+pdf(paste0('BiomarkersIdentification_Fig5A_byPval_20200619.pdf'),
     paper = 'A4',
     width = 7, #inches
     height = 12, #inches
@@ -957,7 +957,7 @@ pdf(paste0('BiomarkersIdentification_Fig4A_byPval_20200619.pdf'),
 # }
 ```
 
-Figure 4B
+Figure 5B
 Overlaps of biomarkers using Node-edge network
 nodes = drugs
 edge = overlapping genes
@@ -1105,7 +1105,7 @@ layout$label <- factor(layout$label,
                                   'Gemcitabine','Cisplatin','FiveFU'))
 # layout$node.colors <- node.cols$colors[match(layout$label,node.cols$label)] %>% as.factor()
 
-Fig4B <- ggraph(routes_tidy, 
+Fig5B <- ggraph(routes_tidy, 
                    layout = 'linear',
                    circular = TRUE
 ) + 
@@ -1143,11 +1143,11 @@ Fig4B <- ggraph(routes_tidy,
 # }
 ```
 
-Save figure 4C
+Save figure 5B
 ```{r}
 setwd('~/CCA/module3_result')
-ggsave(Fig4B,
-       filename = 'Fig4B_20200408.pdf',
+ggsave(Fig5B,
+       filename = 'Fig5B_20200408.pdf',
        height = 18,
        width = 15,
        units = 'cm',
