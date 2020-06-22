@@ -1,5 +1,5 @@
 ---
-title: "Module2 Prediction"
+title: "Module2 Biomarker discovery"
 author: "Patipark Kueanjinda"
 date: "Updated on June 11, 2020"
 output: html_notebook
@@ -36,9 +36,9 @@ df.DR <- df.DR[-(1),] %>% `row.names<-`(., NULL)
 
 ```{r}
 setwd('~/CCA/module1_data')
-df.node <- read.csv('SizeofNodeinCCASubtype.csv', header = FALSE, stringsAsFactors = FALSE)
-colnames(df.node) <- c('Drug','Subtype1','Subtype2')
-df.node <- df.node[-(1),] %>% `row.names<-`(., NULL)
+nodeSize <- read.csv('SizeofNodeinCCASubtype.csv', header = FALSE, stringsAsFactors = FALSE)
+colnames(nodeSize) <- c('Drug','Subtype1','Subtype2')
+nodeSize <- nodeSize[-(1),] %>% `row.names<-`(., NULL)
 ```
 
 Gene selection procedures
@@ -69,7 +69,9 @@ require(parallel)
 require(doParallel)
 cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
 registerDoParallel(cluster)
-    
+```
+
+```{r}
 # k = index number of Cell
 # DrugInit = list of Cell
 # df.input = hallmark gene set table
@@ -80,7 +82,9 @@ DrugInit <- unique(HT2$Cell)
 df.input <- HT2
 df.DR2mod <- df.DR
 df.exp <- b.out %>% subset(Cell %in% to)
+```
 
+```{r}
 # we wrote a function below:
 CVV <- function (k,DrugInit,df.input,df.DR2mod,b.out) {
   # k <- 81 # example
@@ -334,27 +338,20 @@ CVV <- function (k,DrugInit,df.input,df.DR2mod,b.out) {
     #                                 metric = 'ROC',
     #                                 trControl = control.svm)
     
-    # built boosted classification tree model
-    train.ada <- caret::train(Sensitivity ~ .,
-                              data = dataset,
-                              method = 'ada',
-                              metric = 'ROC',
-                              trControl = control)
+    # # built boosted classification tree model
+    # train.ada <- caret::train(Sensitivity ~ .,
+    #                           data = dataset,
+    #                           method = 'ada',
+    #                           metric = 'ROC',
+    #                           trControl = control)
 
-    # built generalized linear model
-    train.glm <- caret::train(Sensitivity ~ .,
-                                   data = dataset,
-                                   method = 'glm',
-                                   metric = 'ROC',
-                                   trControl = control)
+    # # built generalized linear model
+    # train.glm <- caret::train(Sensitivity ~ .,
+    #                                data = dataset,
+    #                                method = 'glm',
+    #                                metric = 'ROC',
+    #                                trControl = control)
 
-    # using sample dataset, determine which algorithm is the best.
-    # models_compare <- resamples(list(
-    #   RF = train.rf, ADA = train.ada, GLM = train.glm
-    # ))
-    # the models comparison showed that random forest is better than SVM in term of specificity and sensitivity.
-    # therefore, we use random forest as the algorithm tob build classification model.
-    
     testset <- dx %>% subset(!Cell %in% c(rnd.sample.list[[f]])) %>% `rownames<-`(., NULL) %>%
       tibble::column_to_rownames(., var = 'Cell')
     
@@ -421,27 +418,9 @@ CVV <- function (k,DrugInit,df.input,df.DR2mod,b.out) {
 
     # use to selected variables from ROC to subset variables from random forest model
     varimp.table2 <- varimp.table %>% subset(rownames(.) %in% sel.genes) #%>%
-      #subset(Sensitive >= 80)
+    #subset(Sensitive >= 80)
     varimp.roc <- varimp.roc %>% subset(rownames(.) %in% sel.genes)
-
-    # ### prediction
-    # # Cells <- c(S1,S2)
-    # # Cells.ex <- !Cells %in% rnd.sample.list[[1]]
-    # # Cells.ex <- Cells[Cells.ex]
-    # # dataset.ex <- dx %>% subset(Cell %in% Cells.ex) %>% `rownames<-`(., NULL) %>% 
-    # #   tibble::column_to_rownames(., var = 'Cell')
-    # # dataset.ex$Sensitivity <- factor(dataset.ex$Sensitivity, levels = c('Sensitive','Resistant'))
-    # # 
-    # # testData <- predict(train.rf, dataset.ex[,-ncol(dataset.ex)], type = 'prob')
-    # # pred <- ifelse(testData[, 'Sensitive'] > 0.5, 'Sensitive', 'Resistant')
-    # # pred <- factor(pred, levels = c('Sensitive','Resistant'))
-    # # # evaluate accuracy using confusionMatrix
-    # # my.cf <- confusionMatrix(reference = dataset.ex$Sensitivity,
-    # #                 data = pred,
-    # #                 mode = 'everything',
-    # #                  positive = 'Sensitive')
-    # ###
-    # 
+    
     outputs <- data.frame('Gene' = rownames(varimp.table2),
                           'Drug' = rep(dnn,nrow(varimp.table2)),
                           'test.ROC.AUC' = rep(as.numeric(AUC),nrow(varimp.table2)),
@@ -470,6 +449,7 @@ CVV <- function (k,DrugInit,df.input,df.DR2mod,b.out) {
                             )
     
   }
+  
   return(table.out)
 }
 ```
@@ -479,6 +459,9 @@ CVV <- function (k,DrugInit,df.input,df.DR2mod,b.out) {
 Biomarkers.test <- lapply(1:82,function(x) {CVV(x,DrugInit,df.input,df.DR2mod,b.out)})
 # generate table results
 Biomarkers <- do.call(rbind, Biomarkers.test)
+
+stopCluster(cluster)
+
 ```
 
 Save table for selected genes
@@ -488,15 +471,18 @@ Save table for selected genes
 # Biomarkers.test.list <- read.csv('PredictedGenes_11072019_v2.csv',header = TRUE,stringsAsFactors = TRUE)
 ```
 
-Evaluate ROC AUC of the train models using CCA cell line dataset
+Evaluate ROC AUC of different train models (randomforest, ada, glm) using CCA cell line dataset
 ```{r}
 require(ggplot2)
 require(plotROC)
 
+# selected 10 of 100 folds in the random combination of cell lines
 sel.fold <- c(10,20,30,40,50,60,70,80,90,100)
 
 modelPerm <- lapply(1:length(sel.fold), function(n) {
+  
   f <- sel.fold[n]
+  
   dataset <- dx %>% subset(Cell %in% c(rnd.sample.list[[f]])) %>% `rownames<-`(., NULL) %>% 
     tibble::column_to_rownames(., var = 'Cell')
   
@@ -606,7 +592,7 @@ modelPerm <- lapply(1:length(sel.fold), function(n) {
          y = 'True Positive Rate \n(Sensitivity)')
   
   # calculate AUC
-  train.ROC.AUC <- calc_auc(train.ROC)
+  train.ROC.AUC <- plotROC::calc_auc(train.ROC)
   train.ROC.AUC$model <- c('RF','GLM','ADA') %>% as.factor()
   
   # add fold number
@@ -630,7 +616,7 @@ my_comparisons <- list( c('RF', 'GLM'), c('RF', 'ADA'), c('GLM', 'ADA') )
 
 require(ggpubr)
 # draw box and whisker plot with dots
-ModelPerform <- ggboxplot(trainModel, 
+FigS6B2 <- ggboxplot(trainModel, 
           x = 'model', 
           y = 'AUC',
           shape = 'model',
@@ -649,7 +635,7 @@ ModelPerform
 Print train model's AUC output
 ```{r}
 setwd('~/CCA/module2_results')
-ggsave(ModelPerform,
+ggsave(FigS6B2,
        filename = 'TrainModel_AUC_20200618.pdf',
        height = 10,
        width = 9,
@@ -658,292 +644,5 @@ ggsave(ModelPerform,
        )
 
 dev.off()
-```
-
-
-End prediction_function script here
-
-
-Figure 4B
-Draw overlapping genes across drugs
-```{r}
-require(tidyverse)
-# extract leading edges from significant gene sets (p.adjust < 0.05)
-B <- lapply(1:length(DrugInit), function(j) {
-  # j <- 1
-  # extract drug name
-  dn <- DrugInit[j]
-  # subset enrichment table by drug
-  df.input$Cell <- gsub('_S.R','',df.input$Cell) %>% trimws(., which = 'both')
-  enrich.table <- df.input %>% subset(Cell == DrugInit[j])
-  # only gene sets with significant level threshold < 0.05 will be selected
-  dfgene <- enrich.table %>% subset(p.adjust < 0.05)
-  # if dataframe is NULL, adjust significant level threshold to < 0.1
-  if(nrow(dfgene) != 0){
-    dfgene <- dfgene
-  } else {
-    # p-value < 0.1 
-    # weak evidence and null hypothesis does not hold
-    dfgene <- enrich.table %>% subset(p.adjust < 0.1)
-  }
-  # extrace genes from significantly enriched hallmarks
-  A <- lapply(1:nrow(dfgene), function(i) {
-    # get core_enrichment column
-    ss <- dfgene$core_enrichment[i]
-    # split string list
-    ss2 <- strsplit(ss,split = '/')
-    ss.df <- data.frame('Gene' = do.call(cbind,ss2))
-    Hallmark <- rep(dfgene$ID[i],nrow(ss.df))
-    # append Hallmark column
-    ss.df <- tibble::add_column(ss.df, Hallmark, .after = 1)
-    return(ss.df)
-  })
-  # build dataframe
-  AA <- do.call(rbind,A)
-  # append Drug name
-  Drug <- rep(DrugInit[j], nrow(AA))
-  AA <- tibble::add_column(AA, Drug, .after = 3)
-  return(AA)
-})
-
-# Table of leading-edge genes from significant cancer hallmarks
-BB <- do.call(rbind,B)
-```
-
-Extract gene expression level
-```{r}
-mat.output <- df.explevel
-# modify cell names in the columns of the table
-from <- c('KKU.213','KKU.214','KKU.156','HuCCA.1','RBE','KKK.D138','TFK.1','YSCCC','SSP.25','KKU.100','HuCCT.1','KKK.D131','KKU.055','KKK.D068','HuH.28')
-
-to <- c('KKU-213','KKU-214','KKU-156','HuCCA-1','RBE','KKK-D138','TFK-1','YSCCC','SSP-25','KKU-100','HuCCT-1','KKK-D131','KKU-055','KKK-D068','HuH-28')
-
-map <- setNames(to,from)
-
-# rename cell names in df.explevel
-ln.col <- length(colnames(df.explevel))
-b <- lapply(1:ln.col, function(n) {
-  idx.name <- which(colnames(df.explevel) %in% names(map))
-  if (n %in% idx.name){
-    a <- as.data.frame(df.explevel[,c(n)])
-    colnames(a)[1] <- map[which(names(map) == colnames(df.explevel)[n])]
-  } else {
-    a <- as.data.frame(df.explevel[,c(n)])
-    colnames(a)[1] <- colnames(df.explevel)[n]
-  }
-  return(a)
-})
-# Reshape fold-change mRNA expression level and subset only CCA cells
-dat.expr <- do.call(cbind,b) %>% reshape2::melt(., id.vars = 'Gene', 
-                                             variable.name = 'Cell', 
-                                             value.name = 'expr') %>% 
-  subset(Cell %in% c(to,from))
-
-dat.expr <- dat.expr %>% group_by(Gene,Cell) %>% summarise(expr = mean(expr))
-
-# add drug sensitivity defined by 100-drug response and individual drug
-S1 <- c('KKK-D138','HuCCA-1','KKU-214','RBE','KKU-156','KKU-213')
-S2 <- c('KKK-D131','HuH-28','HuCCT-1','KKU-100','YSCCC','KKU-055','TFK-1','SSP-25','KKK-D068')
-
-dat.expr$CCA.subgroup <- ifelse(dat.expr$Cell %in% S1,'Subgroup1','Subgroup2')
-
-# subset only genes identified as biomarkers for CCA subtypes
-genes.leadingedge <- BB %>% subset(Drug == 'Subtype_1.2')
-genes.biomarker <- Biomarkers.test.list %>% subset(Drug == 'Subtype_1.2' & Varimp.Score > 80)
-
-# list of biomarkers
-my.genes <- intersect(genes.biomarker$Gene, genes.leadingedge$Gene)
-
-dat.expr2 <- dat.expr %>% subset(Gene %in% unique(my.genes))
-
-# reshape data for pheatmap
-datsub.expr.mat <- reshape2::dcast(dat.expr2, Gene ~ Cell, value.var = 'expr') %>% 
-  tibble::column_to_rownames(., var = 'Gene')
-```
-
-Generate frequency tables of genes in hallmarks
-```{r}
-my.leadgenes <- genes.leadingedge %>% dplyr::select('Gene','Hallmark') %>% subset(Gene %in% my.genes)
-# create table for freq of genes in different hallmarks
-dat.freq <- reshape2::dcast(my.leadgenes, Gene ~ Hallmark) %>% tibble::column_to_rownames(., var = 'Gene')
-
-# dat.freq <- ifelse(is.na(dat.freq), 'N','Y') %>% as.data.frame()
-
-for (n in 1:nrow(dat.freq)) {
-  dat.freq[n,][which(dat.freq[n,] != 0)] <- 'Y'
-  dat.freq[n,][which(dat.freq[n,] == 0)] <- 'N'
-  }
-
-# subset only significantly enriched gene sets
-sig.hallmark <- df.input %>% subset(Cell == 'Subtype_1.2' & p.adjust < 0.05)
-sig.hallmark <- sig.hallmark$ID
-
-sel.dat.freq <- dat.freq %>% as.data.frame() %>% select_(.dots = c(sig.hallmark))
-
-###Prepare color annotation
-# color scale with 'white' as 0
-my.colorgradient <- rev(c('#67001f','#b2182b','#d6604d','#f4a582','#ffffff','#92c5de','#4393c3','#2166ac','#053061'))
-
-### Column Annotation
-# Drug annotation
-ls.newnames <- colnames(datsub.expr.mat)
-annotation <- data.frame(ID = ls.newnames)
-
-annotation$Subgroup <- ifelse(annotation$ID %in% S1,'CCA.S1','CCA.S2') %>% as.factor()
-
-annotation <- tibble::column_to_rownames(annotation, var = 'ID')
-
-### Row Annotation
-#### Tally hallmarks and ranking
-ranking <- lapply(1:ncol(dat.freq), function(n) {
-  c <- sum(grepl('Y',dat.freq[,n])) 
-  h <- colnames(dat.freq)[n]
-  d <- data.frame('Hallmark.ID' = h,
-                  'Cumsum' = c)
-  return(d)
-})
-# build a dataframe
-ranklist <- do.call(rbind,ranking)
-# sort Hallmark.ID by Cumsum
-ranklist <- ranklist %>% arrange(desc(Cumsum))
-# select only significant gene sets
-ranklist <- ranklist %>% subset(Hallmark.ID %in% sig.hallmark)
-
-# rearrange pathway columns by ranklist
-annotation.row <- dat.freq[,c(ranklist$Hallmark.ID)] %>% as.data.frame()
-
-colnames(annotation.row) <- gsub('HALLMARK_','',colnames(annotation.row))
-
-# spacify colors
-varnames <- gsub('HALLMARK_','',sig.hallmark)
-mylist<- setNames(as.list(seq(1,length(varnames))),varnames)
-
-for (i in 1:length(mylist)) {
-  mylist[[i]] <- c('N' = 'white','Y' = 'black')
-}
-
-mylist$Subgroup <- c('CCA.S1' = 'cyan','CCA.S2' = 'orange')
-
-# anno_colors <- list(Subgroup = c('Migrastatic' = 'blue',
-#                                  'Cytotoxic' = 'red'),
-#                     TNFA_SIGNALING_VIA_NFKB = c('N' = 'white', 'Y' = 'black'),
-#                     EPITHELIAL_MESENCHYMAL_TRANSITION = c('N' = 'white', 'Y' = 'black'),
-#                     INFLAMMATORY_RESPONSE = c('N' = 'white', 'Y' = 'black'),
-#                     P53_PATHWAY = c('N' = 'white', 'Y' = 'black'),
-#                     INTERFERON_GAMMA_RESPONSE = c('N' = 'white', 'Y' = 'black'),
-#                     MYOGENESIS = c('N' = 'white', 'Y' = 'black'),
-#                     APOPTOSIS = c('N' = 'white', 'Y' = 'black'),
-#                     COMPLEMENT = c('N' = 'white', 'Y' = 'black'),
-#                     KRAS_SIGNALING_UP = c('N' = 'white', 'Y' = 'black'),
-#                     XENOBIOTIC_METABOLISM = c('N' = 'white', 'Y' = 'black'),
-#                     ESTROGEN_RESPONSE_EARLY = c('N' = 'white', 'Y' = 'black'),
-#                     ESTROGEN_RESPONSE_LATE = c('N' = 'white', 'Y' = 'black')
-# )
-
-# extrafont::loadfonts(device = 'win')
-# windowsFont('Arial')
-###
-
-```
-
-
-```{r}
-pt <- datsub.expr.mat
-pt.sd <- lapply(1:nrow(pt), function(n) {
-  
-  sd(pt[n,])
-  
-})
-
-pt.sd <- do.call(rbind,pt.sd)
-
-id.0sd.row <- which(pt.sd == 0) 
-
-pt.sds <- lapply(1:ncol(pt), function(n) {
-  
-  sd(pt[,n])
-  
-})
-
-pt.sds <- do.call(rbind,pt.sds)
-
-id.0sd.col <- which(pt.sds == 0)
-
-if (is_empty(id.0sd.row)) {
-  ppt <- pt
-} else {
-  ppt <- pt[-c(id.0sd.row),]
-}
-
-if (is_empty(id.0sd.col)) {
-  ppt2 <- ppt
-} else {
-  ppt2 <- ppt[,-c(id.0sd.col)]
-}
-require(corrplot)
-require(dendsort)
-hc <- hclust(dist(ppt2), method = 'average')
-callback <- function(hc, ppt2){dendsort(hc,isReverse = TRUE)}
-
-
-## For pheatmap_1.0.8 and later:
-draw_colnames_90 <- function (coln, gaps, ...) {
-    coord = pheatmap:::find_coordinates(length(coln), gaps)
-    x = coord$coord - 0.5 * coord$size
-    res = textGrob(coln, x = x, y = unit(1, "npc") - unit(3,"bigpts"), vjust = 0.5, hjust = 0, rot = 270, gp = gpar(...))
-    return(res)}
-
-## 'Overwrite' default draw_colnames with your own version 
-assignInNamespace(x="draw_colnames", value="draw_colnames_90",
-ns=asNamespace("pheatmap"))
-
-## Try it out
-pheatmap(d)
-
-
-require(pheatmap)
-fig4B <- pheatmap::pheatmap(ppt2, 
-                  scale = 'row',       # 'row' 'column' 'none'
-                  cluster_rows = TRUE,                    # boolean for cluster by rows
-                  cluster_cols = TRUE,                    # boolean for cluster by columns
-                  clustering_method = 'average',          # method for clustering
-                  clustering_distance_rows = 'euclidean', # use euclidean distance
-                  clustering_distance_cols = 'euclidean', # use euclidean distance
-                  # clustering_distance_rows = dist((1-cor(t(ppt2), method = 'spearman'))),
-                  # clustering_distance_cols = dist((1-cor(ppt2, method = 'spearman'))),
-                  # clustering_callback = callback,
-                  cellwidth = 10,                         # set cell width
-                  cellheight = 2,                       # set cell height
-                  treeheight_row = 0,
-                  treeheight_col = 20,
-                  # #cutree_rows = 4,                        # set break gap between rows
-                  # #cutree_cols = 5,                        # set break gap between columns
-                  show_colnames = TRUE,                   # boolean for showing column names
-                  show_rownames = FALSE,                   # boolean for showing row names
-                  annotation_colors = mylist,
-                  annotation_col = annotation,
-                  annotation_row = annotation.row,
-                  # fontsize = 10,
-                  color = my.colorgradient
-)
-
-```
-
-Save figure 4B
-```{r}
-# setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_4B_files')
-# extrafont::loadfonts(device = 'pdf')
-# windowsFonts(Arial = windowsFont('Arial'))
-# library(grid)
-# library(gridExtra)
-# ggsave(grid.draw(fig4B), 
-#        file = 'ClusterpHeatmap_CCA_SigHallmarks_07042019.png', 
-#        h = 20, 
-#        w = 20, 
-#        units = 'cm', 
-#        # device = cairo_pdf, # to save in PDF
-#        type = 'cairo',
-#        dpi = 600)
-# dev.off()
 ```
 
