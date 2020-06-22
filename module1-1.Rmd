@@ -37,6 +37,7 @@ HM_Category <- read.csv('Hallmark_Category.csv', header = TRUE, stringsAsFactors
 drugtarget <- read.csv('Drug_Target.csv', header = TRUE, stringsAsFactors = FALSE)
 # 6. Node sizes corresponding to drug efficacy compared to standard-of-care drugs from Figure 3C
 nodeSize <- read.csv('SizeofNodeinCCASubtype.csv', header = TRUE, stringsAsFactors = FALSE) %>% `colnames<-`(.,c('Drug','CCA.Subtype1','CCA.Subtype2'))
+
 ```
 
 Data pre-processing steps
