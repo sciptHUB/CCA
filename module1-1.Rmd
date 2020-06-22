@@ -85,7 +85,7 @@ df.mat <- df.m %>% subset(Cell %in% cell.CCA) %>% group_by(Gene, Cell) %>% summa
 # Calculate QT50 from log2 of mean TPM 
 df.mat <- df.mat %>% group_by(Gene) %>% mutate(QT50 = quantile(TPM.m,0.5))
 # Remove genes whose QT50 < 0 and remove QT50 column
-df.mat5 <- df.mat %>% subset(QT50 > 0) %>% select_(.dots = c('Gene','Cell','TPM.m')) 
+df.mat5 <- df.mat %>% subset(QT50 > 0) %>% dplyr::select(Gene,Cell,TPM.m) 
 ```
 
 Number of genes post-processing
@@ -372,7 +372,7 @@ for(i in 1:no.drugs){
          color = 'Drug\nsensitivity')
   
   drug.name <- drugs[i]
-  print(gd)
+  # print(gd)
   # setwd('C:/Users/patipark/Dropbox/CCA manuscript/Final/draft 20/GitData/Patipark/Results/module1_results/Figures/FigureS6D/KDE')
   # ggsave(gd,
   #        filename = paste0(drugs[i],'.pdf'),
@@ -567,8 +567,8 @@ head(drugSens)
 
 Save data table for prediction module
 ```{r}
-setwd('C:/Users/patipark/Dropbox/CCA manuscript/Final/draft 20/GitData/Patipark/Results/module1_results/Tables')
-write.csv(drugSens,file = 'Table_DrugSensitivityClass_20200612.csv',quote = FALSE,row.names = FALSE)
+# setwd('C:/Users/patipark/Dropbox/CCA manuscript/Final/draft 20/GitData/Patipark/Results/module1_results/Tables')
+# write.csv(drugSens,file = 'Table_DrugSensitivityClass_20200612.csv',quote = FALSE,row.names = FALSE)
 ```
 
 
@@ -715,8 +715,8 @@ df.Drug <- df.Drug %>% right_join(.,fc.IndvCell, by = 'Gene')
 
 Save fold-change of expression levels data table
 ```{r}
-setwd('C:/Users/patipark/Dropbox/CCA manuscript/Final/draft 20/GitData/Patipark/Results/module1_results/Tables')
-write.csv(df.Drug,file = 'Expression_level_ALL_20200611.csv',quote = FALSE,row.names = FALSE)
+# setwd('C:/Users/patipark/Dropbox/CCA manuscript/Final/draft 20/GitData/Patipark/Results/module1_results/Tables')
+# write.csv(df.Drug,file = 'Expression_level_ALL_20200611.csv',quote = FALSE,row.names = FALSE)
 ```
 
 Next step, we convert gene names to ENTREZ id for gene annotation. This function require 'clusterProfiler' R package.
@@ -769,7 +769,7 @@ Newest updated MSigDB was on 13 October 2018. Downloaded MSigDBv6_2.zip
 # call 'GSEABase' package
 require(GSEABase)
 # define path folder
-db.path <- 'C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq'
+db.path <- '~/CCA'
 db.folder <- 'msigdb_v6.2_files_local/msigdb_v6.2_GMTs'
 db.list <- list.files(file.path(db.path,db.folder), pattern = '\\.entrez.gmt$')
 
@@ -925,8 +925,8 @@ head(HT)
 
 Save data.
 ```{r}
-setwd('C:/Users/patipark/Dropbox/CCA manuscript/Final/draft 20/GitData/Patipark/Results/module1_results/Tables')
-write.csv(HT,'Hallmarks_Matrix_20200611.csv',row.names = FALSE, quote = FALSE)
+# setwd('C:/Users/patipark/Dropbox/CCA manuscript/Final/draft 20/GitData/Patipark/Results/module1_results/Tables')
+# write.csv(HT,'Hallmarks_Matrix_20200611.csv',row.names = FALSE, quote = FALSE)
 # HT2 <- read.csv('Hallmarks_Matrix_31012019.csv', header = TRUE, stringsAsFactors = FALSE)
 ```
 
@@ -951,7 +951,7 @@ v.sub2 <- v.sub %>% subset(p.adjust > 0.05)
   
   
 require(ggrepel)
-volplot <- ggplot() +
+FigS6A <- ggplot() +
   geom_point(data = v.sub1, 
              aes(x = NES, 
                  y = -log(p.adjust),
@@ -1001,19 +1001,10 @@ setwd('C:/Users/patipark/Dropbox/CCA manuscript/Final/draft 20/GitData/Patipark/
 library(grid)
 library(gridExtra)
 ggsave(grid.draw(volplot),
-       file = 'OrganSubtype_Hallmarks_VolPlot_20200611.png',
+       file = 'FigureS6A_Hallmarks_VolPlot_20200611.png',
        h = 15,
        w = 15,
        units = 'cm',
        dpi = 300)
 dev.off()
 ```
-
-To explore further, a heatmap of hallmarks wouold be generated.
-```{r}
-require(ComplexHeatmap)
-
-
-
-```
-
