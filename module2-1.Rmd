@@ -460,8 +460,6 @@ Biomarkers.test <- lapply(1:82,function(x) {CVV(x,DrugInit,df.input,df.DR2mod,b.
 # generate table results
 Biomarkers <- do.call(rbind, Biomarkers.test)
 
-stopCluster(cluster)
-
 ```
 
 Save table for selected genes
@@ -605,6 +603,8 @@ modelPerm <- lapply(1:length(sel.fold), function(n) {
 })
 
 trainModel <- do.call(rbind,modelPerm)
+
+stopCluster(cluster)
 ```
 
 ```{r}
