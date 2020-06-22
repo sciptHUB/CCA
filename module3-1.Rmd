@@ -1,5 +1,5 @@
 ---
-title: "Module3 Plot biomarkers"
+title: "Module3 Plot biomarkers Figure "
 author: "Patipark Kueanjinda"
 date: "Updated on June 19, 2020"
 output: html_notebook
@@ -15,16 +15,16 @@ Download all biomarkers data
 ```{r}
 setwd('~/CCA/module3_data')
 
-My.biomarkers <- read.csv('PredictedGenes_20191016.csv', header = TRUE, stringsAsFactors = FALSE)
+Biomarkers <- read.csv('PredictedGenes_20191016.csv', header = TRUE, stringsAsFactors = FALSE)
 
-My.biomarkers$Drug <- trimws(My.biomarkers$Drug,which = 'both')
+Biomarkers$Drug <- trimws(Biomarkers$Drug,which = 'both')
 ```
 
 Run data using Module_1.Rmd
 Save drug sensitivity classification data
 ```{r}
 # setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Data_Module_3_1')
-# write.csv(test, file = 'DrugSR_table_18022019.csv', row.names = FALSE, quote = FALSE)
+# write.csv(test, file = 'drugSens_table_18022019.csv', row.names = FALSE, quote = FALSE)
 ```
 
 Download original data tables
@@ -48,23 +48,23 @@ Download data from module 1 results
 ```{r}
 setwd('~/CCA/module1_results/Tables')
 
-drugSR <- read.csv('Table_DrugSensitivityClass_20200612.csv', header = TRUE, stringsAsFactors = FALSE)
+drugSens <- read.csv('Table_DrugSensitivityClass_20200612.csv', header = TRUE, stringsAsFactors = FALSE)
 
-df.hallmark <- read.csv('Hallmarks_Matrix_20200611.csv', header = FALSE, stringsAsFactors = FALSE)
+HT2 <- read.csv('Hallmarks_Matrix_20200611.csv', header = FALSE, stringsAsFactors = FALSE)
 # replace column headers with 1st row
-colnames(df.hallmark) <- df.hallmark[1,]
-colnames(df.hallmark)[c(11,12,13,14)] <- c('leading_edge_1','leading_edge_2','leading_edge_3','core_enrichment')
+colnames(HT2) <- HT2[1,]
+colnames(HT2)[c(11,12,13,14)] <- c('leading_edge_1','leading_edge_2','leading_edge_3','core_enrichment')
 # remove 1st row
-df.hallmark <- df.hallmark[-c(1),] %>% `rownames<-`(.,NULL)
+HT2 <- HT2[-c(1),] %>% `rownames<-`(.,NULL)
 
-# apply as.numeric to columns in df.hallmark
-df.hallmark$setSize <- as.numeric(df.hallmark$setSize)
-df.hallmark$enrichmentScore <- as.numeric(df.hallmark$enrichmentScore)
-df.hallmark$NES <- as.numeric(df.hallmark$NES)
-df.hallmark$pvalue <- as.numeric(df.hallmark$pvalue)
-df.hallmark$p.adjust <- as.numeric(df.hallmark$p.adjust)
-df.hallmark$qvalues <- as.numeric(df.hallmark$qvalues)
-df.hallmark$rank <- as.numeric(df.hallmark$rank)
+# apply as.numeric to columns in HT2
+HT2$setSize <- as.numeric(HT2$setSize)
+HT2$enrichmentScore <- as.numeric(HT2$enrichmentScore)
+HT2$NES <- as.numeric(HT2$NES)
+HT2$pvalue <- as.numeric(HT2$pvalue)
+HT2$p.adjust <- as.numeric(HT2$p.adjust)
+HT2$qvalues <- as.numeric(HT2$qvalues)
+HT2$rank <- as.numeric(HT2$rank)
 
 ```
 
@@ -92,11 +92,13 @@ b <- lapply(1:ln.col, function(n) {
   return(a)
 })
 # mRNA expression levels as in fold-change
-b.out <- do.call(cbind,b) %>% reshape2::melt(., id.vars = 'Gene', 
+df.expr2 <- do.call(cbind,b) %>% reshape2::melt(., id.vars = 'Gene', 
                                              variable.name = 'Cell', 
                                              value.name = 'exp.fc')
 # remove factor levels from Cell column
-b.out$Cell <- as.character(b.out$Cell)
+df.expr2$Cell <- as.character(df.expr2$Cell)
+# convert exp.fc to number
+df.expr2$exp.fc <- as.numeric(df.expr2$exp.fc)
 
 ```
 
@@ -104,21 +106,21 @@ We wanted to short-list the candidate genes further using significant level of g
 As such, we needed to prepare data.
 ```{r}
 # from drug response table, we prepared CCA subtype table
-my.ccaSR <- drugSR %>% group_by(Cell,CCA.Subgroup) %>% summarise()
+my.ccaSR <- drugSens %>% group_by(Cell,CCA.Subgroup) %>% summarise()
 # and prepared organ similarity table
-my.organSR <- drugSR %>% group_by(Cell,Organ.Subgroup) %>% summarise()
+my.organSR <- drugSens %>% group_by(Cell,Organ.Subgroup) %>% summarise()
 ```
 
 In any cases, we also added category to cancer hallmarks.
 ```{r}
 # remove suffix '_S.R'
-df.hallmark$Cell <- gsub('_S.R','',df.hallmark$Cell) %>% trimws(., which = c('both'))
+HT2$Cell <- gsub('_S.R','',HT2$Cell) %>% trimws(., which = c('both'))
 ```
 
 Create a list of CCA subtypes, organ subtypes and drugs.
 ```{r}
 # All drugs are ranked by their node size.
-all.drug <- unique(drugSR$Drug)
+all.drug <- as.character(unique(drugSens$Drug))
 
 # add CCA subtype and organ similarity
 newDrug <- c('Subtype_1.2','OrgSubtype_1.2', all.drug)
@@ -127,7 +129,7 @@ newDrug <- c('Subtype_1.2','OrgSubtype_1.2', all.drug)
 
 For each subtypes, each candidate gene was used to pull information such as cancer hallmark, pvalue, qvalue, and gene expression level from the datasets.
 ```{r}
-SS.df <- lapply(1:length(newDrug), function(x) {
+df.LDedge <- lapply(1:length(newDrug), function(x) {
   
   sel.drug <- newDrug[x]
   # sel.drug <- 'Subtype_1.2'
@@ -136,13 +138,13 @@ SS.df <- lapply(1:length(newDrug), function(x) {
   # }
   
   # retrieve candidate genes for specific drug
-  genelist <- My.biomarkers %>% subset(Drug %in% sel.drug) %>% dplyr::select('Gene')
+  genelist <- Biomarkers %>% subset(Drug %in% sel.drug) %>% dplyr::select('Gene')
 
   ## prepare data for drawing a heatmap of candidate genes
   # extract candidate genes
   predgenes <- genelist$Gene
   # extract gene expression level of candidate genes from CCA cell lines
-  temp <- b.out %>% subset(Cell %in% to & Gene %in% predgenes) %>% as.data.frame()
+  temp <- df.expr2 %>% subset(Cell %in% to & Gene %in% predgenes) %>% as.data.frame()
   # remove factor levels in Cell column
   
   # define CCA subtypes
@@ -167,18 +169,18 @@ SS.df <- lapply(1:length(newDrug), function(x) {
     drug.name <- gsub(pattern = '\\.',replacement = '-',drug1)
     # subset data by drug name and select drug and class.kde columns
     # and arrange row by norm.GR50 from sensitive to resistant
-    listSR <- drugSR %>% subset(Drug %in% drug.name) %>% arrange(., norm.GR50) %>% dplyr::select(Cell,Class.KDE)
+    listSR <- drugSens %>% subset(Drug %in% drug.name) %>% arrange(., norm.GR50) %>% dplyr::select(Cell,Class.KDE)
     # divide into sensitive and resistant groups
     my.S1 <- listSR %>% subset(Class.KDE == 'Sensitive')
     
     my.S2 <- listSR %>% subset(Class.KDE == 'Resistant')
     # retrieve cell line names
-    S1 <- my.S1$Cell
-    S2 <- my.S2$Cell
+    S1 <- as.character(my.S1$Cell)
+    S2 <- as.character(my.S2$Cell)
   }
   
   # arrange columns
-  sel.h2 <- reshape2::dcast(data = temp,Gene ~ Cell,fun.aggregate = mean, value.var = 'exp.fc')
+  sel.h2 <- reshape2::dcast(data = temp,Gene ~ Cell, fun.aggregate = mean, value.var = 'exp.fc')
   
   sel.h <- sel.h2[,c('Gene',S1,S2)]
 
@@ -191,11 +193,11 @@ SS.df <- lapply(1:length(newDrug), function(x) {
   # prepare cancer hallmark data
   # subset hallmark by subtype
   if(sel.drug == 'Subtype_1.2'){
-    df.hm <- df.hallmark %>% subset(Cell == 'Subtype_1.2')
+    df.hm <- HT2 %>% subset(Cell == 'Subtype_1.2')
   } else if (sel.drug == 'OrgSubtype_1.2'){
-    df.hm <- df.hallmark %>% subset(Cell == 'Organ_1.2')
+    df.hm <- HT2 %>% subset(Cell == 'Organ_1.2')
   } else {
-    df.hm <- df.hallmark %>% subset(Cell == sel.drug)
+    df.hm <- HT2 %>% subset(Cell == sel.drug)
   }
   
   # extract leading-edge genes from core_enrichment of the hallmark gene sets
@@ -208,9 +210,9 @@ SS.df <- lapply(1:length(newDrug), function(x) {
       ss <- df.hm$core_enrichment[i]
       # split string list
       ss2 <- strsplit(ss,split = '/')
-      ss.df <- data.frame('Gene' = do.call(cbind,ss2))
+      df.LDedge <- data.frame('Gene' = do.call(cbind,ss2))
       # find whether the gene from selected gene list is in the core_enrichment
-      if (sel.h$Gene[j] %in% ss.df$Gene) {
+      if (sel.h$Gene[j] %in% df.LDedge$Gene) {
         data.frame('Gene' = sel.h$Gene[j],
                    # 'Hallmark.Category' = df.hm$Hallmark.cat[i],
                    'Hallmark.ID' = df.hm$ID[i],
@@ -244,23 +246,24 @@ SS.df <- lapply(1:length(newDrug), function(x) {
   GeneHallmark <- do.call(rbind,S)
   
   # convert to numberic
+  GeneHallmark$NES <- as.numeric(GeneHallmark$NES)
   GeneHallmark$pvalue <- as.numeric(GeneHallmark$pvalue)
   GeneHallmark$p.adjust <- as.numeric(GeneHallmark$p.adjust)
   GeneHallmark$qvalues <- as.numeric(GeneHallmark$qvalues)
   
   # apply cutoff to candidate genes based on:
   # pvalue < 0.01 OR p.adjust < 0.05 AND qvalues < 0.25
-  GeneHallmark.filtered <- GeneHallmark %>% subset(p.adjust < 0.05)
-  if (nrow(GeneHallmark.filtered) == 0){
-    GeneHallmark.filtered <- GeneHallmark.filtered %>% subset(pvalue < 0.1)
+  Gene.sig <- GeneHallmark %>% subset(p.adjust < 0.05)
+  if (nrow(Gene.sig) == 0){
+    Gene.sig <- Gene.sig %>% subset(pvalue < 0.1)
   }
 
   # modified column header
-  colnames(GeneHallmark.filtered)[which(colnames(GeneHallmark.filtered) == 'Cell')] <- 'Drug'
+  colnames(Gene.sig)[which(colnames(Gene.sig) == 'Cell')] <- 'Drug'
   # retrieved drug
   DrugSensitivity <- listSR
   # buit outputs
-  outputs <- list('Hallmarks' = GeneHallmark.filtered,
+  outputs <- list('Hallmarks' = Gene.sig,
                   'GeneExpression' = sel.h,
                   'DrugSensitivity' = listSR)
   return(outputs)
@@ -272,13 +275,13 @@ SS.df <- lapply(1:length(newDrug), function(x) {
 
 Coerce into data tables of gene/hallmark, gene expression, drug sensitivity
 ```{r}
-allHallmarks<- do.call(rbind,lapply(1:length(SS.df), function(x) SS.df[[x]]$Hallmarks))
+allHallmarks<- do.call(rbind,lapply(1:length(df.LDedge), function(x) df.LDedge[[x]]$Hallmarks))
 # map allHallmarks with NES scores
 
 
-allGeneExpression <- do.call(rbind,lapply(1:length(SS.df), function(x) SS.df[[x]]$GeneExpression))
+allGeneExpression <- do.call(rbind,lapply(1:length(df.LDedge), function(x) df.LDedge[[x]]$GeneExpression))
 
-# allDrugSensitivity <- do.call(rbind,lapply(1:length(SS.df), function(x) SS.df[[x]]$DrugSensitivity))
+# allDrugSensitivity <- do.call(rbind,lapply(1:length(df.LDedge), function(x) df.LDedge[[x]]$DrugSensitivity))
 ```
 
 Save expression levels of candidate genes as a table
@@ -485,6 +488,15 @@ extractVIP <- function(sig.test){
 
 ```
 
+```{r}
+# allow parallel 
+require(parallel)
+require(doParallel)
+cl <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cl)
+```
+
+
 Now, we wanted to short-list candidate genes based on averaged expression between 2 subgroups and extract VIP score from random forest model.
 ```{r}
 # draw.hm <- function(x) {
@@ -508,11 +520,15 @@ ClassifierGenes <- lapply(1:length(newDrug), function(x) {
     coldat <- data.frame('Cell' = Sall,
                          'Class' = ifelse(Sall %in% S1,'Liver-like','Pancreas-like'))
   } else {
-    # define S1 and S2 using data from drugSR data table
-    S1.df <- drugSR %>% subset(Drug %in% my.drug & Class.KDE == 'Sensitive') %>% arrange(.,-desc(norm.GR50)) %>% dplyr::select(Cell,Class.KDE)
-    S2.df <- drugSR %>% subset(Drug %in% my.drug & Class.KDE == 'Resistant') %>% arrange(.,-desc(norm.GR50)) %>% dplyr::select(Cell,Class.KDE)
-    S1 <- S1.df$Cell
-    S2 <- S2.df$Cell
+    # define S1 and S2 using data from drugSens data table
+    S1.df <- drugSens %>% subset(Drug %in% my.drug & Class.KDE == 'Sensitive') %>% 
+      arrange(.,norm.GR50) %>% 
+      dplyr::select(Cell,Class.KDE)
+    S2.df <- drugSens %>% subset(Drug %in% my.drug & Class.KDE == 'Resistant') %>% 
+      arrange(.,norm.GR50) %>% 
+      dplyr::select(Cell,Class.KDE)
+    S1 <- as.character(S1.df$Cell)
+    S2 <- as.character(S2.df$Cell)
     # collect cell lines from Subgroup 1 (drug sensitive) and Subgroup 2 (drug resistant)
     Sall <- c(S1,S2)
     my.drug.biom <- paste0(my.drug,'_S.R')
@@ -526,7 +542,7 @@ ClassifierGenes <- lapply(1:length(newDrug), function(x) {
   # rearrange columns by order of cells from tested drug
   my.dt <- my.dt[,Sall]
   # subset genes specific to a particular drug
-  my.genelist <- My.biomarkers %>% subset(Drug == my.drug) %>% arrange(desc(test.ROC.AUC),desc(Varimp.Score)) #subset(Drug %in% my.drug.biom)
+  my.genelist <- Biomarkers %>% subset(Drug == my.drug) %>% arrange(desc(test.ROC.AUC),desc(Varimp.Score)) #subset(Drug %in% my.drug.biom)
   # arrange rownames according to my.genelist$Gene
   my.dt <- my.dt[match(my.genelist$Gene,rownames(my.dt)),]
   # remove NA rows
@@ -608,14 +624,17 @@ ClassifierGenes <- lapply(1:length(newDrug), function(x) {
   return(output)
   
 })
+
+stopCluster(cl)
+
 ```
 
 ```{r}
 # built classification performance results
-Classifier.genes <- do.call(rbind,lapply(1:length(ClassifierGenes), function(x) ClassifierGenes[[x]]$Gene.summary))
+df.Classifier <- do.call(rbind,lapply(1:length(ClassifierGenes), function(x) ClassifierGenes[[x]]$Gene.summary))
 
 # built gene expression results
-Expression.genes <- do.call(rbind,lapply(1:length(ClassifierGenes), function(x) ClassifierGenes[[x]]$Gene.expr))
+df.Expr <- do.call(rbind,lapply(1:length(ClassifierGenes), function(x) ClassifierGenes[[x]]$Gene.expr))
 
 ```  
 
@@ -623,18 +642,18 @@ Save the two tables
 ```{r}
 setwd('~/CCA/module3_results')
 
-# write.csv(Classifier.genes, file = 'ListOfClassifierGenes.csv', row.names = FALSE)
+# write.csv(df.Classifier, file = 'ListOfClassifierGenes.csv', row.names = FALSE)
 
-Classifier.genes <- read.csv('ListOfClassifierGenes.csv', header = TRUE, stringsAsFactors = FALSE)
+df.Classifier <- read.csv('ListOfClassifierGenes.csv', header = TRUE, stringsAsFactors = FALSE)
 
-# write.csv(Expression.genes, file = 'ExpressionOfClassifierGenes.csv', row.names = FALSE)
+# write.csv(df.Expr, file = 'ExpressionOfClassifierGenes.csv', row.names = FALSE)
 
-Expression.genes <- read.csv('ExpressionOfClassifierGenes.csv', header = TRUE, stringsAsFactors = FALSE)
+df.Expr <- read.csv('ExpressionOfClassifierGenes.csv', header = TRUE, stringsAsFactors = FALSE)
 ```
 
 Draw Figure 4A 
 ```{r}
-ColDat <- drugSR
+ColDat <- drugSens
 
 CCA1 <- c('KKU-213','KKU-214','KKU-156','HuCCA-1','RBE','KKK-D138')
 CCA2 <- c('TFK-1','YSCCC','SSP-25','KKU-100','HuCCT-1','KKK-D131','KKU-055','KKK-D068','HuH-28')
@@ -651,7 +670,7 @@ Organ.list <- c(Liver,Panc)
 require(ComplexHeatmap)
 
 if (my.drug == 'Subtype_1.2'){
-  df <- drugSR %>% dplyr::select(Cell,CCA.Subgroup) %>% group_by(Cell,CCA.Subgroup) %>% summarise() %>%
+  df <- drugSens %>% dplyr::select(Cell,CCA.Subgroup) %>% group_by(Cell,CCA.Subgroup) %>% summarise() %>%
     `rownames<-`(.,NULL) #%>% tibble::column_to_rownames(., var = 'Cell')
   # rearrange cell 
   df <- df %>% arrange(., match(Cell, CCA.list))
@@ -667,7 +686,7 @@ if (my.drug == 'Subtype_1.2'){
                             direction = 'horizontal')
   )
 } else if (my.drug == 'OrgSubtype_1.2') {
-  df <- drugSR %>% dplyr::select(Cell,Organ.Subgroup) %>% group_by(Cell,Organ.Subgroup) %>% summarise() %>%
+  df <- drugSens %>% dplyr::select(Cell,Organ.Subgroup) %>% group_by(Cell,Organ.Subgroup) %>% summarise() %>%
     `rownames<-`(.,NULL) #%>% tibble::column_to_rownames(., var = 'Cell')
   df <- df %>% arrange(., match(Cell, Organ.list))
   df <- tibble::column_to_rownames(df, var = 'Cell')
@@ -684,7 +703,7 @@ if (my.drug == 'Subtype_1.2'){
   
 } else {
   # data frame to plot log10GR50 bars
-  df <- drugSR %>% subset(Drug == my.drug) %>% arrange(., norm.GR50) %>% dplyr::select(Cell,Class.KDE) %>% 
+  df <- drugSens %>% subset(Drug == my.drug) %>% arrange(., norm.GR50) %>% dplyr::select(Cell,Class.KDE) %>% 
     `rownames<-`(., NULL) %>% tibble::column_to_rownames(., var = 'Cell')
   colnames(df) <- c('Drug.Sensitivity')
   
@@ -708,7 +727,7 @@ if (my.drug == 'Subtype_1.2'){
 
 ```{r}
 # expression data tabke
-dset.cca <- Expression.genes %>% subset(Drug %in% my.drug)
+dset.cca <- df.Expr %>% subset(Drug %in% my.drug)
 
 # create clinical data
 clinical.data.cca <- data.frame('ID' = to)
@@ -746,7 +765,7 @@ clinical.data.cca$OrganSubtype <- factor(clinical.data.cca$OrganSubtype,
 clinical.data.cca <- tibble::column_to_rownames(clinical.data.cca, var = 'ID')
 
 ## Create row annotation
-rowdat <- Classifier.genes %>% subset(Drug %in% my.drug)
+rowdat <- df.Classifier %>% subset(Drug %in% my.drug)
 
 # define genes as positive or negative NES
 Pos.grp <- allHallmarks %>% subset(Drug == my.drug & NES >= 0)
@@ -756,9 +775,6 @@ rowdat$Group <- ifelse(rowdat$Gene %in% Pos.grp$Gene,'Pos','Neg')
 # add factor levels
 rowdat$Group <- factor(rowdat$Group, levels = c('Pos','Neg'))
 
-```
-
-```{r}
 # # rearrange genes by group and dimeCor
 # rowdat.Pos <- rowdat %>% subset(Group == 'Pos') %>% arrange(-ratio)
 # rowdat.Neg <- rowdat %>% subset(Group == 'Neg') %>% arrange(-ratio)
@@ -769,6 +785,10 @@ rowdat.Pos <- rowdat %>% subset(Group == 'Pos') %>% arrange(.,wilcox.pvalue,-rat
 rowdat.Neg <- rowdat %>% subset(Group == 'Neg') %>% arrange(.,-wilcox.pvalue,ratio)
 rowdat <- rbind(rowdat.Pos, rowdat.Neg)
 
+```
+
+Create column and row annotations.
+```{r}
 # make sure that genes in rows were arranged by Gini score from high to low
 ha.row.VIPrf <- ComplexHeatmap::rowAnnotation(VIP.rf = anno_barplot(rowdat$VIP.rf, which = 'row',
                                                  gp = gpar(fill = 'black'),
@@ -837,7 +857,10 @@ ha.row.ratio <- rowAnnotation(expr.ratio = anno_points(rowdat$ratio, which = 'ro
                              annotation_name_offset = unit(c(6), 'mm'),
                              annotation_name_rot = c(0)
 )
+```
 
+Calculate frequency of biomarkers in cancer hallmarks
+```{r}
 # create dat.freq
 temp.freq <- allHallmarks %>% subset(Drug == my.drug & Gene %in% rowdat$Gene)
 dat.freq <- reshape2::dcast(temp.freq, Gene ~ Hallmark.ID)
@@ -867,7 +890,10 @@ dat.freq.3 <- tibble::rownames_to_column(dat.freq.2, var = 'Gene')
 dat.freq.3$Gene <- factor(dat.freq.3$Gene, levels = c(rowdat$Gene))
 dat.freq.3 <- dat.freq.3 %>% arrange(.,Gene)
 dat.freq.3 <- tibble::column_to_rownames(dat.freq.3, var = 'Gene')
+```
 
+Prepare gene expression levels table
+```{r}
 # scale gene expression level across cell lines
 dset.mat <- dset.cca[,-c(which(colnames(dset.cca) == 'Drug'))] %>% as.matrix()
 mat <- t(apply(dset.mat, 1, scale))
@@ -886,6 +912,7 @@ if (nrow(mat) > 50) {
 
 ```
 
+Draw frequency matrix.
 ```{r}
 fq.hm <- ComplexHeatmap::Heatmap(as.matrix(dat.freq.3), 
                  name = 'hallmark', 
@@ -900,7 +927,10 @@ fq.hm <- ComplexHeatmap::Heatmap(as.matrix(dat.freq.3),
                  # heatmap_legend_param = list(title = "Methylation"), 
                  width = ncol(dat.freq.2)*unit(4, "mm"))
 
+```
 
+Draw expression level heatmap.
+```{r}
 # Plot heatmap
 my.colorgradient3 <- rev(c('#67001f','#b2182b','#d6604d','#f4a582','#ffffff','#92c5de','#4393c3','#2166ac','#053061'))
 
@@ -930,14 +960,18 @@ bio.hm <- Heatmap(as.matrix(mat), # my.dt.sorted
                   name = 'expr.level' # legend title
 )
 
-fig5A <- ComplexHeatmap::draw(fq.hm + bio.hm + ha.row.ratio + ha.row.pval + ha.row.VIPrf + ha.row.VIPplsda)
+```
+
+Put all together
+```{r}
+Fig5A <- ComplexHeatmap::draw(fq.hm + bio.hm + ha.row.ratio + ha.row.pval + ha.row.VIPrf + ha.row.VIPplsda)
 
 ```
 
 Draw Figure 5A
 ```{r}
 setwd('~/CCA/module3_results')
-pdf(paste0('BiomarkersIdentification_Fig5A_byPval_20200619.pdf'),
+pdf(paste0('Figure5A_BiomarkersIdentification_20200619.pdf'),
     paper = 'A4',
     width = 7, #inches
     height = 12, #inches
@@ -973,8 +1007,8 @@ DrugNodes <- c('Subtype_1.2',
 Drug1 <- c('Saracatinib','TAK733','Dasatinib',
            'Gemcitabine','Cisplatin','FiveFU')
 
-# subset significant gene biomarkers from Classifier.genes table
-X <- Classifier.genes %>% subset(Drug %in% DrugNodes)
+# subset significant gene biomarkers from df.Classifier table
+X <- df.Classifier %>% subset(Drug %in% DrugNodes)
 
 # findOverlap <- function(X){
 # X = list of genes in a drug
@@ -1143,11 +1177,11 @@ Fig5B <- ggraph(routes_tidy,
 # }
 ```
 
-Save figure 5B
+Save Figure 5B
 ```{r}
 setwd('~/CCA/module3_result')
 ggsave(Fig5B,
-       filename = 'Fig5B_20200408.pdf',
+       filename = 'Figure5B_20200408.pdf',
        height = 18,
        width = 15,
        units = 'cm',
@@ -1174,15 +1208,24 @@ We wanted to know the performance of CCA subtype biomarkers in predicting other 
 We built SVM model from expression levels of biomarkers of individual drug.
 Then, we tested the model using expression levels of biomarkers from CCA subtypes.
 ```{r}
+# allow parallel 
+require(parallel)
+require(doParallel)
+cl <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cl)
+
+```
+
+```{r}
 TestDrugs <- c('Subtype','Saracatinib','TAK733','Gemcitabine','Cisplatin')
-dat.CF <- Classifier.genes
-dat.EX <- Expression.genes
+dat.CF <- df.Classifier
+dat.EX <- df.Expr
 
 # List of various cell line subtypes
 # from drug response table, we prepared CCA subtype table
-my.ccaSR <- drugSR %>% group_by(Cell,CCA.Subgroup) %>% summarise()
+my.ccaSR <- drugSens %>% group_by(Cell,CCA.Subgroup) %>% summarise()
 # and prepared organ similarity table
-my.organSR <- drugSR %>% group_by(Cell,Organ.Subgroup) %>% summarise()
+my.organSR <- drugSens %>% group_by(Cell,Organ.Subgroup) %>% summarise()
 
 myROC <- lapply(1:length(TestDrugs), function(n) {
   # n <- 1
@@ -1212,16 +1255,16 @@ myROC <- lapply(1:length(TestDrugs), function(n) {
   # List of various cell line subtypes
   # from drug response table, we prepared CCA subtype table
   if(MyDrug == 'Subtype'){
-  dat.Class <- drugSR %>% group_by(Cell,CCA.Subgroup) %>% summarise()
+  dat.Class <- drugSens %>% group_by(Cell,CCA.Subgroup) %>% summarise()
   dat.Class$CCA.Subgroup <- ifelse(dat.Class$CCA.Subgroup == 'Subgroup 1','Sensitive','Resistant')
   colnames(dat.Class)[2] <- 'Class'
   } else if (MyDrug == 'OrgSubtype') {
   # and prepared organ similarity table
-  dat.Class <- drugSR %>% group_by(Cell,Organ.Subgroup) %>% summarise()
+  dat.Class <- drugSens %>% group_by(Cell,Organ.Subgroup) %>% summarise()
   dat.Class$Organ.Subgroup <- ifelse(dat.Class$Organ.Subgroup == 'liver-like','Sensitive','Resistant')
   colnames(dat.Class)[2] <- 'Class'
   } else {
-  dat.Class <- drugSR %>% subset(Drug == MyDrug) %>% dplyr::select(Cell,Class.KDE)
+  dat.Class <- drugSens %>% subset(Drug == MyDrug) %>% dplyr::select(Cell,Class.KDE)
   colnames(dat.Class)[2] <- 'Class'
   }
   # add cell line subtypes to expression level dataframe
@@ -1333,7 +1376,7 @@ Save ROC results Figure 5C.
 setwd('~/CCA/module3_results')
 
 ggsave(Fig5C,
-       filename = 'Fig5C_20200621.pdf',
+       filename = 'Figure5C_20200621.pdf',
        height = 8,
        width = 12,
        units = 'cm',
