@@ -1,15 +1,14 @@
 ---
-title: Use unsupervised clustering to ID drug response and predict patient survival
-  rate
-output:
-  html_document:
-    df_print: paged
+title: "Module4-1 Evaluating biomarkers in CCA patients (Figure 6A-6E 7A-7F)"
+author: "Patipark Kueanjinda"
+date: "Updated on June 22, 2020"
+output: html_notebook
 ---
 
 Download patient classification data
 ```{r}
 # download patient classification
-setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq')
+setwd('~/CCA/module3_data2')
 
 df.ptclass <- read.csv('GSE76297_patient_classification.csv', header = TRUE, stringsAsFactors = FALSE)
 ```
@@ -18,10 +17,10 @@ Download extracted core genes from previous analysis using CCA cell lines
 ```{r}
 # next we will subset Genes, Expression values and test for our predictive markers
 # download top predictive genes from previous analysis
-setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_S5A_files')
+setwd('~/CCA/module3_data')
 # write.csv(SubTable3,file = 'Significant_Biomarkers_20Drugs_07082019_02.csv',quote = FALSE,row.names = FALSE)
 
-SigBioList <- read.csv('Sig_Biomarkers_AllDrugs_20191114.csv', header = TRUE, stringsAsFactors = FALSE)
+SigBioList <- read.csv('PredictedGenes_20191016.csv', header = TRUE, stringsAsFactors = FALSE)
 
 # SigBioList <- SigBioList[-c(1:3),]
 # colnames(SigBioList) <- c('Gene','Drug')
