@@ -17,18 +17,16 @@ Download extracted core genes from previous analysis using CCA cell lines
 ```{r}
 # next we will subset Genes, Expression values and test for our predictive markers
 # download top predictive genes from previous analysis
-setwd('~/CCA/module3_data')
-# write.csv(SubTable3,file = 'Significant_Biomarkers_20Drugs_07082019_02.csv',quote = FALSE,row.names = FALSE)
+# setwd('~/CCA/module3_results')
+# Biomarkers <- read.csv('ListOfClassifierGenes.csv', header = TRUE, stringsAsFactors = FALSE)
+# or
+Biomarkers <- Classifier.genes
 
-SigBioList <- read.csv('PredictedGenes_20191016.csv', header = TRUE, stringsAsFactors = FALSE)
-
-# SigBioList <- SigBioList[-c(1:3),]
-# colnames(SigBioList) <- c('Gene','Drug')
 ```
 
 ```{r}
 require(tidyverse)
-SigGenes2 <- SigBioList %>% subset(Drug == 'Subtype_1.2')
+myGenes <- Biomarkers %>% subset(Drug == 'Subtype_1.2')
 ```
 
 Remove 1st row and change column header
@@ -36,18 +34,16 @@ Remove 1st row and change column header
 # note that the genes were ranked by Gini index
 # remove Gini column row
 
-topgenes <- SigGenes2$Gene
+topgenes <- myGenes$Gene
 ```
 
 We will combine gene expression from patients with CCA cell lines.
 Download CCA cell line data
 ```{r}
-# setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Data_Module_3_alldrugs_biomarkers')
-# dc <- read.csv('Expression_level_ALL_20191009.csv', header = TRUE, stringsAsFactors = FALSE)
-# dc <- read.csv('Expression_level_ALL_07042019.csv', header = TRUE, stringsAsFactors = FALSE)
+setwd('~/CCA/module1_results/Tables')
 
-setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Data_Module_3_alldrugs_biomarkers')
-dc <- read.csv('Expression_level_ALL_20191009.csv', header = TRUE, stringsAsFactors = FALSE)
+df.explevel <- read.csv('Expression_level_ALL_20200611.csv', header = TRUE, stringsAsFactors = FALSE)
+
 ```
 
 Prepare CCA cell line gene expression data.
@@ -60,24 +56,24 @@ to <- c('KKU-213','KKU-214','KKU-156','HuCCA-1','RBE','KKK-D138','HuH-28','KKU-0
 map <- setNames(to,from)
 
 # rename cell names in df.explevel
-ln.col <- length(colnames(dc))
+ln.col <- length(colnames(df.explevel))
 b <- lapply(1:ln.col, function(n) {
-  idx.name <- which(colnames(dc) %in% names(map))
+  idx.name <- which(colnames(df.explevel) %in% names(map))
   if (n %in% idx.name){
-    a <- as.data.frame(dc[,c(n)])
-    colnames(a)[1] <- map[which(names(map) == colnames(dc)[n])]
+    a <- as.data.frame(df.explevel[,c(n)])
+    colnames(a)[1] <- map[which(names(map) == colnames(df.explevel)[n])]
   } else {
-    a <- as.data.frame(dc[,c(n)])
-    colnames(a)[1] <- colnames(dc)[n]
+    a <- as.data.frame(df.explevel[,c(n)])
+    colnames(a)[1] <- colnames(df.explevel)[n]
    }
   return(a)
 })
 # c-bind data
-b.out <- do.call(cbind,b)
+df.expr2 <- do.call(cbind,b)
 # rename column
-colnames(b.out)[1] <- 'Gene'
-# reshape b.out
-df.cca <- reshape2::melt(b.out, id.vars = 'Gene', variable.name = 'Cell', value.name = 'Explevel')
+colnames(df.expr2)[1] <- 'Gene'
+# reshape df.expr2
+df.cca <- reshape2::melt(df.expr2, id.vars = 'Gene', variable.name = 'Cell', value.name = 'Explevel')
 # assign Class according to Cell
 S1 <- c('KKU-213', 'KKU-214', 'KKU-156', 'HuCCA-1', 'RBE','KKK-D138')
 S2 <- c('TFK-1','YSCCC','SSP-25','KKU-100','HuCCT-1','KKK-D131','KKU-055','KKK-D068','HuH-28')
@@ -108,7 +104,7 @@ cca <- m.cca
 
 Download Jusakul et al. (2017) data
 ```{r}
-setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Data_Module_4_Prediction/SubClassMapping/input')
+setwd('~/CCA/module3_data2')
 
 expr.apinya <- read.csv('GSE89747_CCA_Processed.csv', header = TRUE, stringsAsFactors = FALSE)
 
@@ -151,7 +147,7 @@ apinya <- app %>% group_by(Gene) %>% mutate(scexpr = scale_this(expr)) %>%
   tibble::column_to_rownames(., var = 'Gene') 
 
 ### Apinya
-anno.apinya <- annotation.apinya %>% dplyr::select(c('Sample.ID','Expanded.cluster'))
+anno.apinya <- annotation.apinya %>% dplyr::select(Sample.ID,Expanded.cluster)
 anno.apinya$Expanded.cluster[anno.apinya$Expanded.cluster == 'N/A'] <- NA
 # remove NA rows
 # anno.apinya <- anno.apinya[-c(which(is.na(anno.apinya$Expanded.cluster))),]
@@ -170,13 +166,19 @@ txtformat.apinya <- data.frame('id' = names(subgroup.apinya),
 intersected.samples <- intersect(txtformat.apinya$id,colnames(apinya))
 
 apinya <- apinya[,c(which(colnames(apinya) %in% intersected.samples))]
+```
 
+```{r}
 # 117 patients with RNA seq data
+# find missing genes in patient dataset
+In.genes <- intersect(intersect(rownames(apinya), rownames(cca)), topgenes)
+Out.genes <- topgenes[which(!topgenes %in% In.genes)]
+
 # Add AREG TCOF1 TNFAIP2 TP53 = 0 to apinya data set
-extragenes <- matrix(data = 0, nrow = 4, ncol = ncol(apinya)) %>% as.data.frame()
+extragenes <- matrix(data = 0, nrow = length(Out.genes), ncol = ncol(apinya)) %>% as.data.frame()
 
 colnames(extragenes) <- colnames(apinya)
-rownames(extragenes) <- c('AREG','TCOF1','TNFAIP2','TP53')
+rownames(extragenes) <- Out.genes
 
 apinya <- rbind(apinya, extragenes)
 
@@ -340,6 +342,21 @@ pval.surv <- surv_pvalue(fit.list, combine = FALSE)
 pval.surv$drug
 ```
 
+```{r}
+# estimate 1-year survival probability
+OneYear.Drug <- summary(survfit(Surv(Survival.days, Vital.state == 1) ~ Drug.subgroup, 
+                                data = clinical.data), 
+                        times = 365.25)
+
+OneYear.Cluster <- summary(survfit(Surv(Survival.days, Vital.state == 1) ~ Cluster, 
+                                data = clinical.data), 
+                        times = 365.25)
+
+OneYear.TNM <- summary(survfit(Surv(Survival.days, Vital.state == 1) ~ TNM, 
+                                data = clinical.data), 
+                        times = 365.25)
+```
+
 
 ```{r}
 # draw surivial plot using ggsurvplot from survminer package
@@ -477,7 +494,6 @@ OS1.Asian <- ggplot() +
 
 # use all CCA patients drug subtype 1
 OS1.Asian
-
 ```
 
 ```{r}
@@ -621,7 +637,7 @@ ppcos2$Gene <- factor(ppcos2$Gene, levels = ppcos2$Gene)
 ```
 
 ```{r}
-# create data for right, row annotation using coefficient values
+# create data for the row annotation based on coefficient values
 mybar <- ppcos2
 # modify Dim.1.2 sign
 mybar$Dim.1.2 <- ifelse(mybar$Dim.1.cor < 0, -mybar$Dim.1.2, mybar$Dim.1.2) 
@@ -634,10 +650,11 @@ mybar <- tibble::column_to_rownames(mybar, var = 'Gene')
 
 Download coefficient scores
 ```{r}
-setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
+setwd('~/CCA/module4_data')
 # write.csv(ridge.coef, file = 'Coeff_RidgeRegression_20200227.csv',row.names = FALSE)
 mycoef <- read.csv('CoefficientValues_20200326.csv',header = TRUE,stringsAsFactors = FALSE)
 ```
+
 
 ```{r}
 # add coefficient 
@@ -667,12 +684,12 @@ datin.apcc <- datin[,which(colnames(datin) %in% apcc$ID)] %>% as.data.frame()
 datin.apcc.sub <- datin.apcc %>% subset(rownames(.) %in% topgenes)
 
 # scale expression level across 45 genes
-my5B <- apply(X = datin.apcc.sub,MARGIN = 1,FUN = scale) %>% t() %>% as.data.frame()
+myFig6A <- apply(X = datin.apcc.sub,MARGIN = 1,FUN = scale) %>% t() %>% as.data.frame()
 
-colnames(my5B) <- colnames(datin.apcc.sub)
+colnames(myFig6A) <- colnames(datin.apcc.sub)
 
 # use unsupervised hierarhical clustering to classify cca patients
-hr <- hclust(dist(t(my5B), method = 'euclidean',), method = 'ward.D2')
+hr <- hclust(dist(t(myFig6A), method = 'euclidean',), method = 'ward.D2')
 clusters <- dendextend::cutree(hr, k = 2)
 
 # this cluster will be further used.
@@ -690,8 +707,8 @@ ordertab$ID <- names(hrID)[match(ordertab$Order,hrID)]
 
 ordertab$Cluster <- clusters[match(ordertab$ID,names(clusters))]
 
-# rearrange genes in my5B
-my5B1 <- my5B[rownames(mybar),ordertab$ID]
+# rearrange genes in myFig6A
+myFig6A1 <- myFig6A[rownames(mybar),ordertab$ID]
 ```
 
 Rearrange column annotations
@@ -798,9 +815,10 @@ ha2.col <- ComplexHeatmap::HeatmapAnnotation(cca.subgroup = cca.subgroup,
 )
 ```
 
+Draw a heatmap. Genes were arranged by Cos2 values
 ```{r}
 # Plot heatmap
-myFig5B <- ComplexHeatmap::Heatmap(as.matrix(my5B1), # my.dt.sorted
+Fig6A.Cos2 <- ComplexHeatmap::Heatmap(as.matrix(myFig6A1), # my.dt.sorted
                   # column_km = 2,
                   # split = clusters,
                   # gap = unit(2,'mm'),
@@ -832,11 +850,11 @@ myFig5B <- ComplexHeatmap::Heatmap(as.matrix(my5B1), # my.dt.sorted
                   name = 'zscore\nexpr' # legend title
 )
 
-myFig5B
+Fig6A.Cos2
 
 ```
 
-Rearrange genes by Coef
+Rearrange genes by Ridge regression coefficient values.
 ```{r}
 # modify coefficient table
 mybarCoef <- mybar %>% tibble::rownames_to_column(., var = 'Gene')
@@ -846,7 +864,7 @@ mybarCoef <- mybarCoef %>% mutate(Group = ifelse(Dim.1.2 < 0, -1,1)) %>%
                                       group_by(Group) %>% 
                                       arrange(Coef)
 # rearrange rows in gene expression data
-my5BCoef <- my5B1[mybarCoef$Gene,]
+myFig6ACoef <- myFig6A1[mybarCoef$Gene,]
 # define row annotation
 ha2Coef.row <- ComplexHeatmap::rowAnnotation( #Cos2 = anno_barplot(mybar5B.45$Dim.1.2, baseline = 0),
                                          Coef = anno_barplot(mybarCoef$Coef, baseline = 0))
@@ -855,7 +873,7 @@ ha2Coef.row <- ComplexHeatmap::rowAnnotation( #Cos2 = anno_barplot(mybar5B.45$Di
 
 ```{r}
 # Plot heatmap
-myFig5BCoef <- ComplexHeatmap::Heatmap(as.matrix(my5BCoef), # my.dt.sorted
+Fig6A.Coef <- ComplexHeatmap::Heatmap(as.matrix(myFig6ACoef), # my.dt.sorted
                   # column_km = 2,
                   # split = clusters,
                   # gap = unit(2,'mm'),
@@ -887,18 +905,18 @@ myFig5BCoef <- ComplexHeatmap::Heatmap(as.matrix(my5BCoef), # my.dt.sorted
                   name = 'zscore\nexpr' # legend title
 )
 
-myFig5BCoef
+Fig6A.Coef
 
 ```
 
 Save figure 5B
 ```{r}
 # Save Jusakul-CCA heatmap fig5B
-setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
-pdf(paste0('Fig5B_45Genes_Heatmap_JusakulCCA_20200402.pdf'),
+setwd('~/CCA/module4_results/Figures')
+pdf(paste0('Fig6A_45Genes_Heatmap_JusakulCCA_20200402.pdf'),
     height = 7,
     width = 15)
-draw(myFig5BCoef,
+draw(Fig6ACoef,
      height = unit(5,'in'),
      width = unit(14,'in')
      )
@@ -906,10 +924,10 @@ dev.off()
 
 ```
 
-
+Draw a heatmp whose few genes were removed and rearranged by ridge coefficient values with separation between positve NES and negative NES gene sets.
 ```{r}
 # remove TP53, AREG, TCOF1, TNFAIP2 from gene expression matrix
-my5BCoef4 <- my5BCoef %>% subset(!rownames(.) %in% c('TP53','AREG','TCOF1','TNFAIP2'))
+myFig6ACoef4 <- myFig6ACoef %>% subset(!rownames(.) %in% c('TP53','AREG','TCOF1','TNFAIP2'))
 
 # remove the above genes from row annotation table
 mybarCoef4 <- mybarCoef %>% subset(!Gene %in% c('TP53','AREG','TCOF1','TNFAIP2'))
@@ -921,10 +939,10 @@ mybarCoef5 <- mybarCoef4 %>% group_by(Group) %>% arrange(-Group,Coef)
 ha2Coef5.row <- ComplexHeatmap::rowAnnotation( #Cos2 = anno_barplot(mybarCoef5$Dim.1.2, baseline = 0),
                                          Coef = anno_barplot(mybarCoef5$Coef, baseline = 0))
 # rearrange genes in the matrix
-my5BCoef5 <- my5BCoef4[mybarCoef5$Gene,]
+myFig6ACoef5 <- myFig6ACoef4[mybarCoef5$Gene,]
 
 # plot a heatmap
-myFig5BCoef5 <- ComplexHeatmap::Heatmap(as.matrix(my5BCoef5), # my.dt.sorted
+Fig6ACoef5 <- ComplexHeatmap::Heatmap(as.matrix(myFig6ACoef5), # my.dt.sorted
                   # column_km = 2,
                   # split = clusters,
                   # gap = unit(2,'mm'),
@@ -956,7 +974,7 @@ myFig5BCoef5 <- ComplexHeatmap::Heatmap(as.matrix(my5BCoef5), # my.dt.sorted
                   name = 'zscore\nexpr' # legend title
 )
 
-myFig5BCoef5
+Fig6ACoef5
 ```
 
 Save Jusakul-CCA heatmap fig5B
@@ -965,18 +983,26 @@ Save Jusakul-CCA heatmap fig5B
 # pdf(paste0('Fig5B_CombinedDatasets_Heatmap_JusakulCCA_20200326.pdf'),
 #     height = 7,
 #     width = 15)
-# draw(myFig5BCoef5,
+# draw(Fig6ACoef5,
 #      height = unit(5,'in'),
 #      width = unit(14,'in')
 #      )
 # dev.off()
 ```
 
+However, ridge cofficient values were actually calculated at later steps.
+
+From this point, we were going to find ridge cofficient values.
+Initially, we succesfully classify patients and cell lines into two groups using unsupervised clustering.
+(Euclidean distant and Ward.D2 method.). To make clustering consistency, we aimed to find numerical values for each biomarkers.
+
+However, we needed to make sure that the two groups have significant survival rate. 
+
 Based on unsupervised clustering above, examine CCA patient overall survival
 ```{r}
 # Prepare clinical data
 # y_auc <- known.class
-patient.list <- colnames(my5BCoef5)
+patient.list <- colnames(myFig6ACoef5)
 
 clinical.data <- annotation.apinya %>% subset(Sample.ID %in% patient.list)
 # select columns
@@ -1287,7 +1313,7 @@ require(glmnet)
 
 # create X input from gene expression from Figure5B heatmap
 # samples include CCA cell lines (n = 15) and patients (n = 100)
-X.glm <- t(my5BCoef)
+X.glm <- t(myFig6ACoef)
 # create Y input
 Y.glm <- data.frame('ID' = rownames(X.glm))
 # assign drug response subgroup to samples based on the hierarchical clustering above
@@ -1364,8 +1390,8 @@ coef(fit2.glm)
 
 Use to glm model to predict patient data
 ```{r}
-# subset gene expression data from ~30% of the samples from my5BCoef
-newX <- t(my5BCoef)
+# subset gene expression data from ~30% of the samples from myFig6ACoef
+newX <- t(myFig6ACoef)
 # random sampling
 # rndsam <- sample(rownames(newX), size = ceiling(nrow(newX)*0.3))
 # use CCA cell lines as testing set
@@ -1462,7 +1488,7 @@ confusionMatrix's accuracy = 0.92
 AUC = 0.92
 ```{r}
 # predict class of CCA cell lines
-newX.cca <- t(my5BCoef)
+newX.cca <- t(myFig6ACoef)
 
 newX.cca <- newX.cca[to,]
 
@@ -1513,7 +1539,7 @@ we continue to use the predicted drug response subgroup using the Coef and asses
 Use coef values to predict drug subclass and evaluate overall survival rate
 ```{r}
 #test set
-demo.X <- t(my5BCoef) %>% as.data.frame() #as.matrix(datin.pca)
+demo.X <- t(myFig6ACoef) %>% as.data.frame() #as.matrix(datin.pca)
 
 # subset only CCA cells
 demo.X <- demo.X %>% subset(!rownames(.) %in% to)
@@ -1539,7 +1565,7 @@ mybeta <- read.csv('CoefficientValues_20200326.csv', header = TRUE, stringsAsFac
 intercept <- mybeta[1,2]
 beta <- mybeta[c(-1),] %>% as.data.frame()
 
-demo.X <- t(my5BCoef) %>% as.data.frame() #as.matrix(datin.pca)
+demo.X <- t(myFig6ACoef) %>% as.data.frame() #as.matrix(datin.pca)
 
 # subset only CCA cells
 demo.X <- demo.X %>% subset(!rownames(.) %in% to)
@@ -2317,7 +2343,7 @@ Apply tSNE to the gene expression dataset to display landscape of the samples (C
 ```{r}
 require(Rtsne)
 set.seed(12345)
-tsne_out <- Rtsne(as.matrix(t(my5BCoef)),
+tsne_out <- Rtsne(as.matrix(t(myFig6ACoef)),
                   initial_dims = 20, # Cumsum(PoV) = 80%
                   perplexity = 30, # N^(1/2) = 11
                   theta = 0.5,
@@ -2325,7 +2351,7 @@ tsne_out <- Rtsne(as.matrix(t(my5BCoef)),
 
 # extract tsne1 and tsne2
 tsne.result <- tsne_out$Y %>% as.data.frame()
-rownames(tsne.result) <- colnames(my5BCoef)
+rownames(tsne.result) <- colnames(myFig6ACoef)
 colnames(tsne.result) <- c('tSNE1','tSNE2')
 
 # assign drug subgroup from unsupervised hierarchical clusters to data table
