@@ -1,5 +1,5 @@
 ---
-title: "Module3 Plot biomarkers Figure "
+title: "Module3 Plot biomarkers Figure 5A 5B 5C "
 author: "Patipark Kueanjinda"
 date: "Updated on June 19, 2020"
 output: html_notebook
@@ -41,7 +41,7 @@ Download data from module 1 results
 ```{r}
 setwd('~/CCA/module3_data2')
 
-df.explevel <- read.csv('Expression_level_ALL_20191111.csv', header = TRUE, stringsAsFactors = FALSE)
+df.explevel <- read.csv('Expression_level_ALL_20200611.csv', header = TRUE, stringsAsFactors = FALSE)
 ```
 
 Download data from module 1 results
