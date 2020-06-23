@@ -20,15 +20,15 @@ Download extracted core genes from previous analysis using CCA cell lines
 setwd('~/CCA/module3_results')
 # write.csv(SubTable3,file = 'Significant_Biomarkers_20Drugs_07082019_02.csv',quote = FALSE,row.names = FALSE)
 
-SigBioList <- read.csv('ListOfClassifierGenes.csv', header = TRUE, stringsAsFactors = FALSE)
+Biomarkers <- read.csv('ListOfClassifierGenes.csv', header = TRUE, stringsAsFactors = FALSE)
 
-# SigBioList <- SigBioList[-c(1:3),]
-# colnames(SigBioList) <- c('Gene','Drug')
+# Biomarkers <- Biomarkers[-c(1:3),]
+# colnames(Biomarkers) <- c('Gene','Drug')
 ```
 
 ```{r}
 require(tidyverse)
-SigGenes2 <- SigBioList %>% subset(Drug == 'Subtype_1.2')
+myGenes <- Biomarkers %>% subset(Drug == 'Subtype_1.2')
 ```
 
 Remove 1st row and change column header
@@ -36,21 +36,21 @@ Remove 1st row and change column header
 # note that the genes were ranked by Gini index
 # remove Gini column row
 
-topgenes <- SigGenes2$Gene
+topgenes <- myGenes$Gene
 ```
 
 We will combine gene expression from patients with CCA cell lines.
 Download CCA cell line data
 ```{r}
 # setwd('C:/Users/patipark/Dropbox/CCA project/CCA/module3_data2')
-# dc <- read.csv('Expression_level_ALL_20191111.csv', header = TRUE, stringsAsFactors = FALSE)
+# df.explevel <- read.csv('Expression_level_ALL_20191111.csv', header = TRUE, stringsAsFactors = FALSE)
 
 setwd('~/CCA/module3_data2')
-dc <- read.csv('Expression_level_ALL_20191111.csv', header = TRUE, stringsAsFactors = FALSE)
-# dc <- read.csv('Expression_level_ALL_07042019.csv', header = TRUE, stringsAsFactors = FALSE)
+df.explevel <- read.csv('Expression_level_ALL_20200611.csv', header = TRUE, stringsAsFactors = FALSE)
+# df.explevel <- read.csv('Expression_level_ALL_07042019.csv', header = TRUE, stringsAsFactors = FALSE)
 
 # setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Data_Module_3_alldrugs_biomarkers')
-# dc <- read.csv('Expression_level_ALL_20191009.csv', header = TRUE, stringsAsFactors = FALSE)
+# df.explevel <- read.csv('Expression_level_ALL_20191009.csv', header = TRUE, stringsAsFactors = FALSE)
 ```
 
 Prepare CCA cell line gene expression data.
@@ -63,24 +63,24 @@ to <- c('KKU-213','KKU-214','KKU-156','HuCCA-1','RBE','KKK-D138','HuH-28','KKU-0
 map <- setNames(to,from)
 
 # rename cell names in df.explevel
-ln.col <- length(colnames(dc))
+ln.col <- length(colnames(df.explevel))
 b <- lapply(1:ln.col, function(n) {
-  idx.name <- which(colnames(dc) %in% names(map))
+  idx.name <- which(colnames(df.explevel) %in% names(map))
   if (n %in% idx.name){
-    a <- as.data.frame(dc[,c(n)])
-    colnames(a)[1] <- map[which(names(map) == colnames(dc)[n])]
+    a <- as.data.frame(df.explevel[,c(n)])
+    colnames(a)[1] <- map[which(names(map) == colnames(df.explevel)[n])]
   } else {
-    a <- as.data.frame(dc[,c(n)])
-    colnames(a)[1] <- colnames(dc)[n]
+    a <- as.data.frame(df.explevel[,c(n)])
+    colnames(a)[1] <- colnames(df.explevel)[n]
    }
   return(a)
 })
 # c-bind data
-b.out <- do.call(cbind,b)
+df.expr2 <- do.call(cbind,b)
 # rename column
-colnames(b.out)[1] <- 'Gene'
-# reshape b.out
-df.cca <- reshape2::melt(b.out, id.vars = 'Gene', variable.name = 'Cell', value.name = 'Explevel')
+colnames(df.expr2)[1] <- 'Gene'
+# reshape df.expr2
+df.cca <- reshape2::melt(df.expr2, id.vars = 'Gene', variable.name = 'Cell', value.name = 'Explevel')
 # assign Class according to Cell
 S1 <- c('KKU-213', 'KKU-214', 'KKU-156', 'HuCCA-1', 'RBE','KKK-D138')
 S2 <- c('TFK-1','YSCCC','SSP-25','KKU-100','HuCCT-1','KKK-D131','KKU-055','KKK-D068','HuH-28')
@@ -238,7 +238,8 @@ dset.cca <- dset %>% t() %>% as.data.frame() %>%
 
 ```
 
-To answer the question: Do these biomarkers specific to cell lines' phenotype such as drug response, organ status, OV-infection, we use PLS-DA to find PCs and their percent of variance explained. 
+We asked "Do these biomarkers specific to cell line's phenotypes such as drug response, organ status, OV-infection?"
+We used PLS-DA to find PCs and their percent of variance explained. 
 
 ```{r}
 # use 15 cell lines in the analysis
@@ -288,7 +289,8 @@ set.seed(100)
 mixOmics::plotIndiv(plsr.ov)
 ```
 
-Use ropls package to obtain quality of prediction (Q2)
+Use 'ropls' package to obtain quality of prediction (Q2).
+CCA drug response
 ```{r}
 set.seed(100)
 # by default, Cross-validation = 10, algorithm = NIPALS, random permutation = 20
@@ -297,6 +299,7 @@ opls.drug <- ropls::opls(cca.45bio[,-c(46,47,48)],
                          crossvalI = 10)
 ```
 
+Organ subtypes
 ```{r}
 set.seed(100)
 # by default, Cross-validation = 10, algorithm = NIPALS, random permutation = 20
@@ -305,6 +308,7 @@ opls.organ <- ropls::opls(cca.45bio[,-c(46,47,48)],
                           crossvalI = 10)
 ```
 
+Ov infection
 ```{r}
 set.seed(100)
 # by default, Cross-validation = 10, algorithm = NIPALS, random permutation = 20
@@ -341,7 +345,7 @@ figQ2a <- ggplot(sumDF,
 figQ2a
 ```
 
-Save Figure S6G
+Save Q2 figure
 ```{r}
 # setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
 # ggsave(figQ2,
@@ -352,7 +356,7 @@ Save Figure S6G
 #        device = cairo_pdf)
 ```
 
-Is 45 gene set predict better than a whole gene set?
+Then, can the 45-gene CCA biomarkers predict CCA subtype better than whole transcriptome?
 ```{r}
 # expression level of whole transcriptome
 cca.whole <- dat.tdm %>% subset(dataset == 'cca')
@@ -372,6 +376,7 @@ cca.whole$organSubtype <- factor(cca.whole$organSubtype, levels = c('Liver-like'
 cca.whole$OVSubtype <- factor(cca.whole$OVSubtype, levels = c('Fluke-pos','Fluke-neg'))
 ```
 
+CCA drug response
 ```{r}
 set.seed(100)
 # by default, Cross-validation = 10, algorithm = NIPALS, random permutation = 20
@@ -380,6 +385,7 @@ opls.drug.w <- ropls::opls(cca.whole[,-c(10762,10763,10764)],
                            crossvalI = 10)
 ```
 
+Organ subtype
 ```{r}
 set.seed(100)
 # by default, Cross-validation = 10, algorithm = NIPALS, random permutation = 20
@@ -388,6 +394,7 @@ opls.organ.w <- ropls::opls(cca.whole[,-c(10762,10763,10764)],
                             crossvalI = 10)
 ```
 
+Ov infection
 ```{r}
 set.seed(100)
 # by default, Cross-validation = 10, algorithm = NIPALS, random permutation = 20
@@ -407,6 +414,7 @@ sumDF.w <- tibble::rownames_to_column(sumDF.w, var = 'Phenotype')
 sumDF.w$Phenotype <- factor(sumDF.w$Phenotype, levels = c('Drug','Organ','OV'))
 ```
 
+Compare Q2 results from 45 genes and whole transcriptome in prediction of CCA drug response, organ subtype, and Ov infection.
 ```{r}
 # combine opls of 45-bio and whole-transcriptome sets together
 sumDF$model <- 'Biomarkers'
@@ -418,7 +426,7 @@ sumDF.all <- rbind(sumDF,sumDF.w)
 # add factor level to model
 sumDF.all$model <- factor(sumDF.all$model, levels = c('Biomarkers','All'))
 
-# tweak non-significant model
+# set non-significant model (pval < 0.05) to near zero
 sumDF.all$`Q2(cum)` <- ifelse(sumDF.all$pQ2 > 0.05, 0.005, sumDF.all$`Q2(cum)`)
 ```
 
@@ -445,7 +453,7 @@ FigS6C <- ggplot(sumDF.all,
 FigS6C
 ```
 
-Save Figure S6G
+Save Figure S6C
 ```{r}
 setwd('~/CCA/module3_results')
 ggsave(FigS6C,
