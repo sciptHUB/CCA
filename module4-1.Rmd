@@ -684,12 +684,12 @@ datin.apcc <- datin[,which(colnames(datin) %in% apcc$ID)] %>% as.data.frame()
 datin.apcc.sub <- datin.apcc %>% subset(rownames(.) %in% topgenes)
 
 # scale expression level across 45 genes
-myFig6A <- apply(X = datin.apcc.sub,MARGIN = 1,FUN = scale) %>% t() %>% as.data.frame()
+myMatrix <- apply(X = datin.apcc.sub,MARGIN = 1,FUN = scale) %>% t() %>% as.data.frame()
 
-colnames(myFig6A) <- colnames(datin.apcc.sub)
+colnames(myMatrix) <- colnames(datin.apcc.sub)
 
 # use unsupervised hierarhical clustering to classify cca patients
-hr <- hclust(dist(t(myFig6A), method = 'euclidean',), method = 'ward.D2')
+hr <- hclust(dist(t(myMatrix), method = 'euclidean',), method = 'ward.D2')
 clusters <- dendextend::cutree(hr, k = 2)
 
 # this cluster will be further used.
@@ -708,7 +708,7 @@ ordertab$ID <- names(hrID)[match(ordertab$Order,hrID)]
 ordertab$Cluster <- clusters[match(ordertab$ID,names(clusters))]
 
 # rearrange genes in myFig6A
-myFig6A1 <- myFig6A[rownames(mybar),ordertab$ID]
+myMatrix2 <- myMatrix[rownames(mybar),ordertab$ID]
 ```
 
 Rearrange column annotations
@@ -818,7 +818,7 @@ ha2.col <- ComplexHeatmap::HeatmapAnnotation(cca.subgroup = cca.subgroup,
 Draw a heatmap. Genes were arranged by Cos2 values
 ```{r}
 # Plot heatmap
-Fig6A.Cos2 <- ComplexHeatmap::Heatmap(as.matrix(myFig6A1), # my.dt.sorted
+Fig6.Cos2 <- ComplexHeatmap::Heatmap(as.matrix(myMatrix2), # my.dt.sorted
                   # column_km = 2,
                   # split = clusters,
                   # gap = unit(2,'mm'),
@@ -850,7 +850,7 @@ Fig6A.Cos2 <- ComplexHeatmap::Heatmap(as.matrix(myFig6A1), # my.dt.sorted
                   name = 'zscore\nexpr' # legend title
 )
 
-Fig6A.Cos2
+Fig6.Cos2
 
 ```
 
@@ -864,16 +864,17 @@ mybarCoef <- mybarCoef %>% mutate(Group = ifelse(Dim.1.2 < 0, -1,1)) %>%
                                       group_by(Group) %>% 
                                       arrange(Coef)
 # rearrange rows in gene expression data
-myFig6ACoef <- myFig6A1[mybarCoef$Gene,]
+myMatrix2.Coef <- myMatrix2[mybarCoef$Gene,]
 # define row annotation
 ha2Coef.row <- ComplexHeatmap::rowAnnotation( #Cos2 = anno_barplot(mybar5B.45$Dim.1.2, baseline = 0),
                                          Coef = anno_barplot(mybarCoef$Coef, baseline = 0))
 
 ```
 
+Draw a heatmap in which genes are arranged by Coef values.
 ```{r}
 # Plot heatmap
-Fig6A.Coef <- ComplexHeatmap::Heatmap(as.matrix(myFig6ACoef), # my.dt.sorted
+Fig6A.Coef <- ComplexHeatmap::Heatmap(as.matrix(myMatrix2.Coef), # my.dt.sorted
                   # column_km = 2,
                   # split = clusters,
                   # gap = unit(2,'mm'),
@@ -909,14 +910,14 @@ Fig6A.Coef
 
 ```
 
-Save figure 5B
+Save figure 6A
 ```{r}
 # Save Jusakul-CCA heatmap fig5B
 setwd('~/CCA/module4_results/Figures')
 pdf(paste0('Fig6A_45Genes_Heatmap_JusakulCCA_20200402.pdf'),
     height = 7,
     width = 15)
-draw(Fig6ACoef,
+draw(Fig6A.Coef,
      height = unit(5,'in'),
      width = unit(14,'in')
      )
@@ -927,7 +928,7 @@ dev.off()
 Draw a heatmp whose few genes were removed and rearranged by ridge coefficient values with separation between positve NES and negative NES gene sets.
 ```{r}
 # remove TP53, AREG, TCOF1, TNFAIP2 from gene expression matrix
-myFig6ACoef4 <- myFig6ACoef %>% subset(!rownames(.) %in% c('TP53','AREG','TCOF1','TNFAIP2'))
+myMatrix2.Coef4 <- myMatrix2.Coef %>% subset(!rownames(.) %in% c('TP53','AREG','TCOF1','TNFAIP2'))
 
 # remove the above genes from row annotation table
 mybarCoef4 <- mybarCoef %>% subset(!Gene %in% c('TP53','AREG','TCOF1','TNFAIP2'))
@@ -939,10 +940,10 @@ mybarCoef5 <- mybarCoef4 %>% group_by(Group) %>% arrange(-Group,Coef)
 ha2Coef5.row <- ComplexHeatmap::rowAnnotation( #Cos2 = anno_barplot(mybarCoef5$Dim.1.2, baseline = 0),
                                          Coef = anno_barplot(mybarCoef5$Coef, baseline = 0))
 # rearrange genes in the matrix
-myFig6ACoef5 <- myFig6ACoef4[mybarCoef5$Gene,]
+myMatrix2.Coef5 <- myMatrix2.Coef4[mybarCoef5$Gene,]
 
 # plot a heatmap
-Fig6ACoef5 <- ComplexHeatmap::Heatmap(as.matrix(myFig6ACoef5), # my.dt.sorted
+Fig6A.Coef5 <- ComplexHeatmap::Heatmap(as.matrix(myMatrix2.Coef5), # my.dt.sorted
                   # column_km = 2,
                   # split = clusters,
                   # gap = unit(2,'mm'),
@@ -974,16 +975,16 @@ Fig6ACoef5 <- ComplexHeatmap::Heatmap(as.matrix(myFig6ACoef5), # my.dt.sorted
                   name = 'zscore\nexpr' # legend title
 )
 
-Fig6ACoef5
+Fig6A.Coef5
 ```
 
-Save Jusakul-CCA heatmap fig5B
+Save Jusakul-CCA heatmap Figure 6A.Coef5
 ```{r}
 # setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
-# pdf(paste0('Fig5B_CombinedDatasets_Heatmap_JusakulCCA_20200326.pdf'),
+# pdf(paste0('Fig6ACoef5_CombinedDatasets_Heatmap_JusakulCCA_20200326.pdf'),
 #     height = 7,
 #     width = 15)
-# draw(Fig6ACoef5,
+# draw(Fig6A.Coef5,
 #      height = unit(5,'in'),
 #      width = unit(14,'in')
 #      )
@@ -1305,6 +1306,7 @@ OS100pt.TH
 # dev.off()
 ```
 
+Table S5 Cofficient values
 Find coefficient for each parameter (gene) that can separate CCA patients into groups with significant OS.
 ```{r}
 # 1. glmnet
@@ -1553,11 +1555,11 @@ mybeta <- tibble::rownames_to_column(mybeta, var = 'Gene')
 mybeta
 ```
 
-Save Coefficient values
+Save Coefficient values Table S5
 ```{r}
 setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
-# write.csv(mybeta, file = 'CoefficientValues_20200326.csv',row.names = FALSE)
-mybeta <- read.csv('CoefficientValues_20200326.csv', header = TRUE, stringsAsFactors = FALSE)
+write.csv(mybeta, file = 'TableS5_CoefficientValues_20200326.csv',row.names = FALSE)
+# mybeta <- read.csv('CoefficientValues_20200326.csv', header = TRUE, stringsAsFactors = FALSE)
 ```
 
 ```{r}
@@ -1624,6 +1626,7 @@ summary(fit100pt.group)
 
 ```
 
+Figure S7C
 ```{r}
 # draw survival plot of Asian patients
 pt100.drug <- survival::survfit(Surv(Survival.days, Vital.state) ~ Drug.subgroup, 
@@ -1633,7 +1636,7 @@ sum.100pt.drug <- surv_summary(pt100.drug, data = clinical.data100pt) %>% as.dat
 
 sum.100ptDrug <- convert(sum.100pt.drug)
 
-OS100pt.coef <- ggplot() +
+FigS7C.OS100pt.coef <- ggplot() +
   geom_step(data = sum.100ptDrug,
             aes(x = time.year,
                 y = surv, 
@@ -1659,7 +1662,7 @@ OS100pt.coef <- ggplot() +
        title = paste0('100 pt; coef; p-value = ',round(summary(fit100pt.group)$coefficients[5],4)))
 
 # use all CCA patients drug subtype 1
-OS100pt.coef
+FigS7C.OS100pt.coef
 
 ```
 
@@ -1668,11 +1671,11 @@ Tally CCA subgroup 1 and 2 in 100 patients cohort
 clinical.data100pt %>% group_by(Drug.subgroup) %>% tally()
 ```
 
-Save figure S6C
+Save figure S7C
 ```{r}
 # setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
-# ggsave(OS100pt.coef,
-#        filename = 'Figure_OS100pt_Coef_20200326.pdf',
+# ggsave(FigS7C.OS100pt.coef,
+#        filename = 'FigureS7C_OS100pt_Coef_20200326.pdf',
 #        height = 4,
 #        width = 6,
 #        units = 'in',
@@ -1680,6 +1683,7 @@ Save figure S6C
 # dev.off()
 ```
 
+Figure 6B
 Use results from Coef to predict OS of Asian patients
 Asian country patients
 ```{r}
@@ -1705,7 +1709,7 @@ sum.Asian.drug <- surv_summary(Asian.drug, data = clinical.dataAsia) %>% as.data
 
 sum.AsDrug <- convert(sum.Asian.drug)
 
-OS100pt.Asian <- ggplot() +
+Fig6B.OS100pt.Asian <- ggplot() +
   geom_step(data = sum.AsDrug,
             aes(x = time.year,
                 y = surv, 
@@ -1731,7 +1735,7 @@ OS100pt.Asian <- ggplot() +
        title = paste0('Asian patients; coef; p-value = ',round(summary(Asfit.group)$coefficients[5],4)))
 
 # use all CCA patients drug subtype 1
-OS100pt.Asian
+Fig6B.OS100pt.Asian
 
 ```
 
@@ -1740,11 +1744,11 @@ Tally CCA subgroup 1 and 2 in Asian patients cohort
 clinical.dataAsia %>% group_by(Drug.subgroup) %>% tally()
 ```
 
-Save figure 5C
+Save figure 6B
 ```{r}
 # setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
-# ggsave(OS100pt.Asian,
-#        filename = 'Figure_OSAsianpt_Coef_20200326.pdf', 
+# ggsave(Fig6B.OS100pt.Asian,
+#        filename = 'Figure6B_OSAsianpt_Coef_20200326.pdf', 
 #        height = 4,
 #        width = 6, 
 #        units = 'in',
@@ -1752,8 +1756,8 @@ Save figure 5C
 # dev.off()
 ```
 
-
-Use results from Coef to predict OS of TH patients
+Figure S7D
+Use results from Coef to predict OS of Ov-infected patients
 ```{r}
 # subset data for Thailand or OV-infected patients only
 clinical.dataTH <- clinical.data %>% subset(Country %in% c('Thailand'))
@@ -1776,7 +1780,7 @@ sum.TH.drug <- surv_summary(TH.drug, data = clinical.dataTH) %>% as.data.frame()
 
 sum.THDrug <- convert(sum.TH.drug)
 
-OS100pt.TH <- ggplot() +
+FigS7D.OS100pt.TH <- ggplot() +
   geom_step(data = sum.THDrug,
             aes(x = time.year,
                 y = surv, 
@@ -1802,7 +1806,7 @@ OS100pt.TH <- ggplot() +
        title = paste0('OV-infected patients; coef; p-value = ',round(summary(THfit.group)$coefficients[5],4)))
 
 # use all CCA patients drug subtype 1
-OS100pt.TH
+FigS7D.OS100pt.TH
 
 ```
 
@@ -1811,11 +1815,11 @@ Tally CCA subgroup 1 and 2 in OV-infected patients cohort
 clinical.dataTH %>% group_by(Drug.subgroup) %>% tally()
 ```
 
-Save figure S6D
+Save figure S7D
 ```{r}
 # setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
 # ggsave(OS100pt.TH,
-#        filename = 'Figure_OSOVpt_Coef_20200326.pdf', 
+#        filename = 'FigureS7D_OSOVpt_Coef_20200326.pdf', 
 #        height = 4,
 #        width = 6, 
 #        units = 'in',
@@ -1824,7 +1828,8 @@ Save figure S6D
 
 ```
 
-Use results from Coef to predict OS of EU patients
+Figure 6C
+Use results from Coef to predict OS of non-Asian patients
 ```{r}
 # subset data
 clinical.dataEU <- clinical.data %>% subset(!Country %in% c('Singapore','Thailand','Korea'))
@@ -1847,7 +1852,7 @@ sum.EU.drug <- surv_summary(EU.drug, data = clinical.dataEU) %>% as.data.frame()
 
 sum.EUDrug <- convert(sum.EU.drug)
 
-OS100pt.EU <- ggplot() +
+Fig6C.OS100pt.EU <- ggplot() +
   geom_step(data = sum.EUDrug,
             aes(x = time.year,
                 y = surv, 
@@ -1870,10 +1875,10 @@ OS100pt.EU <- ggplot() +
   # facet_grid(lty ~ .) +
   labs(x = 'Time (years)',
        y = 'Survival Rate (%)',
-       title = paste0('EU patients; coef; p-value = ',round(summary(EUfit.group)$coefficients[5],4)))
+       title = paste0('non-Asian patients; coef; p-value = ',round(summary(EUfit.group)$coefficients[5],4)))
 
 # use all CCA patients drug subtype 1
-OS100pt.EU
+Fig6C.OS100pt.EU
 ```
 
 Tally CCA subgroup 1 and 2 in EU patients cohort
@@ -1881,11 +1886,11 @@ Tally CCA subgroup 1 and 2 in EU patients cohort
 clinical.dataEU %>% group_by(Drug.subgroup) %>% tally()
 ```
 
-Save figure S6E
+Save figure 6C
 ```{r}
 # setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
-# ggsave(OS100pt.EU,
-#        filename = 'Figure_OSEUpt_Coef_20200326.pdf', 
+# ggsave(Fig6C.OS100pt.EU,
+#        filename = 'Figure6C_OSEUpt_Coef_20200326.pdf', 
 #        height = 4,
 #        width = 6, 
 #        units = 'in',
@@ -1894,6 +1899,45 @@ Save figure S6E
 
 ```
 
+Calculate 1- and 3-year survival rate
+```{r}
+# 100 patients cohort
+OneYear.pt100.drug <- summary(survfit(Surv(Survival.days, Vital.state) ~ Drug.subgroup, 
+                                data = clinical.data100pt, conf.type = 'log-log'), 
+                              times = 365.25)
+ThreeYear.pt100.drug <- summary(survfit(Surv(Survival.days, Vital.state) ~ Drug.subgroup, 
+                                data = clinical.data100pt, conf.type = 'log-log'), 
+                              times = 365.25*3)
+# Asian vs non-Asian
+# Asian CCA
+OneYear.Asian <- summary(survfit(Surv(Survival.days, Vital.state) ~ Drug.subgroup, 
+                                data = clinical.dataAsia, conf.type = 'log-log'), 
+                              times = 365.25)
+ThreeYear.Asian <- summary(survfit(Surv(Survival.days, Vital.state) ~ Drug.subgroup, 
+                                data = clinical.dataAsia, conf.type = 'log-log'), 
+                              times = 365.25*3)
+# non-Asian CCA
+OneYear.nonAsian <- summary(survfit(Surv(Survival.days, Vital.state) ~ Drug.subgroup, 
+                                data = clinical.dataEU, conf.type = 'log-log'), 
+                              times = 365.25)
+ThreeYear.nonAsian <- summary(survfit(Surv(Survival.days, Vital.state) ~ Drug.subgroup, 
+                                data = clinical.dataEU, conf.type = 'log-log'), 
+                              times = 365.25*3)
+
+# Ov+ vs Ov-
+# Ov+
+OneYear.OvPos <- summary(survfit(Surv(Survival.days, Vital.state) ~ Drug.subgroup, 
+                                data = clinical.dataTH, conf.type = 'log-log'), 
+                              times = 365.25)
+ThreeYear.OvPos <- summary(survfit(Surv(Survival.days, Vital.state) ~ Drug.subgroup, 
+                                data = clinical.dataTH, conf.type = 'log-log'), 
+                              times = 365.25*3)
+
+# These data will be used to plot Figure 7
+```
+
+Distribution of molecular subtypes in CCA subtypes
+Figure S7E
 In 100-patient cohort
 Compare predicted classes by unsupervised and supervised clustering methods
 ```{r}
@@ -1927,7 +1971,7 @@ ptcounts$pred.class <- ifelse(ptcounts$pred.class == 1,'CCA1','CCA2')
 # add factor level
 ptcounts$pred.class <- factor(ptcounts$pred.class, levels = c('CCA1','CCA2'))
 
-myFig5C100pt.Coef <- ggplot(ptcounts,
+myFigS7E.100pt.Coef <- ggplot(ptcounts,
                 aes(x = pred.class,
                     y = percent,
                     fill = molec.class,
@@ -1946,14 +1990,14 @@ myFig5C100pt.Coef <- ggplot(ptcounts,
        fill = 'Molecular Subtypes',
        title = '100 pt; coef')
 
-myFig5C100pt.Coef
+myFigS7E.100pt.Coef
 ```
 
-Save figure S6B
+Save figure S7E
 ```{r}
 # setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
-# ggsave(myFig5C100pt.Coef,
-#        filename = 'Figure_Tally100pt_Coef_20200326.pdf', 
+# ggsave(myFigS7E.5C100pt.Coef,
+#        filename = 'FigureS7E_Tally100pt_Coef_20200326.pdf', 
 #        height = 3,
 #        width = 4, 
 #        units = 'in',
@@ -2097,6 +2141,7 @@ dev.off()
 
 ```
 
+Figure 6D
 In Asian patient only cohort
 Compare predicted classes by unsupervised and supervised clustering methods
 ```{r}
@@ -2131,7 +2176,7 @@ ptcounts$pred.class <- ifelse(ptcounts$pred.class == 1,'CCA1','CCA2')
 # add factor level
 ptcounts$pred.class <- factor(ptcounts$pred.class, levels = c('CCA1','CCA2'))
 
-myFig5CAspt.Coef <- ggplot(ptcounts,
+myFig6D.Aspt.Coef <- ggplot(ptcounts,
                 aes(x = pred.class,
                     y = percent,
                     fill = molec.class,
@@ -2150,13 +2195,13 @@ myFig5CAspt.Coef <- ggplot(ptcounts,
        fill = 'Molecular Subtypes',
        title = 'Asian pt; coef')
 
-myFig5CAspt.Coef
+myFig6D.Aspt.Coef
 ```
 
-Save figure 5C
+Save figure 6D
 ```{r}
 # setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
-# ggsave(myFig5CAspt.Coef,
+# ggsave(myFig6D.Aspt.Coef,
 #        filename = 'Figure_TallyASpt_Coef_20200326.pdf', 
 #        height = 3,
 #        width = 4, 
@@ -2166,6 +2211,7 @@ Save figure 5C
 
 ```
 
+Figure 6E
 Additional figure for Non-Asian population
 ```{r}
 apyi.nonAs <- clinical.data %>% dplyr::select(ID,Fluke.Infection,Country,Cluster,Drug.subgroup) %>% 
@@ -2203,7 +2249,7 @@ ptcounts$pred.class <- ifelse(ptcounts$pred.class == 1,'CCA1','CCA2')
 # add factor level
 ptcounts$pred.class <- factor(ptcounts$pred.class, levels = c('CCA1','CCA2'))
 
-myFig5CnonAspt.Coef <- ggplot(ptcounts,
+myFig6E.nonAspt.Coef <- ggplot(ptcounts,
                 aes(x = pred.class,
                     y = percent,
                     fill = molec.class,
@@ -2222,14 +2268,14 @@ myFig5CnonAspt.Coef <- ggplot(ptcounts,
        fill = 'Molecular Subtypes',
        title = 'non-Asian pt; coef')
 
-myFig5CnonAspt.Coef
+myFig6E.nonAspt.Coef
 ```
 
-Save Figure distribution of molecular subtypes in drug subgroups for non-Asian patients
+Save Figure 6E distribution of molecular subtypes in drug subgroups for non-Asian patients
 ```{r}
 setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
-ggsave(myFig5CnonAspt.Coef,
-       filename = 'Figure_TallyNonASpt_Coef_20200421.pdf',
+ggsave(myFig6E.nonAspt.Coef,
+       filename = 'Figure6E_TallyNonASpt_Coef_20200421.pdf',
        height = 3,
        width = 4,
        units = 'in',
@@ -2273,6 +2319,7 @@ myFigOV.Coef <- ggplot(infcounts,
 myFigOV.Coef
 ```
 
+Figure S7F
 Additional figure for Ov-infected population
 ```{r}
 apyi.As$infect <- clinical.data$Fluke.Infection[match(apyi.As$ID,clinical.data$ID)]
@@ -2302,7 +2349,7 @@ ptcounts$pred.class <- ifelse(ptcounts$pred.class == 1,'CCA1','CCA2')
 # add factor level
 ptcounts$pred.class <- factor(ptcounts$pred.class, levels = c('CCA1','CCA2'))
 
-myFig5COvpt.Coef <- ggplot(ptcounts,
+myFigS7F.Ovpt.Coef <- ggplot(ptcounts,
                 aes(x = pred.class,
                     y = percent,
                     fill = molec.class,
@@ -2321,15 +2368,15 @@ myFig5COvpt.Coef <- ggplot(ptcounts,
        fill = 'Molecular Subtypes',
        title = 'Ov-infected pt; coef')
 
-myFig5COvpt.Coef
+myFigS7F.Ovpt.Coef
 
 ```
 
-Save Figure distribution of molecular subtypes in drug subgroups for Ov-infected patients
+Save Figure S7F distribution of molecular subtypes in drug subgroups for Ov-infected patients
 ```{r}
 setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
-ggsave(myFig5COvpt.Coef,
-       filename = 'Figure_TallyOvpt_Coef_20200421.pdf',
+ggsave(myFigS7F.Ovpt.Coef,
+       filename = 'FigureS7F_TallyOvpt_Coef_20200421.pdf',
        height = 3,
        width = 4,
        units = 'in',
@@ -2338,7 +2385,7 @@ dev.off()
 
 ```
 
-
+Figure S7B
 Apply tSNE to the gene expression dataset to display landscape of the samples (CCA cell lines and patients) based on gene expression data.
 ```{r}
 require(Rtsne)
@@ -2485,8 +2532,9 @@ tsne.cca <- tsne.my %>% subset(ID %in% to)
 tsne.pt <- tsne.my %>% subset(!ID %in% to)
 ```
 
+
 ```{r}
-figS6A <- ggplot() +
+figS7B <- ggplot() +
   # geom_tile(data = xgrid,
   #           aes(x = tSNE1,
   #               y = tSNE2,
@@ -2545,19 +2593,69 @@ figS6A <- ggplot() +
   
   guides(fill = guide_legend(override.aes = list(shape = 21)))
   
-figS6A
+figS7B
 ```
 
-Save figure S6A
+Save figure S7B
 ```{r}
 setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
-ggsave(figS6A,
-       filename = 'Figure_tSNE_20200402.pdf',
+ggsave(figS7B,
+       filename = 'FigureS7B_tSNE_20200402.pdf',
        height = 5,
        width = 6,
        units = 'in',
        device = cairo_pdf)
 dev.off()
 
+```
+
+Part of Figure 7
+```{r}
+# create report table
+SumTable <- data.frame('X.year.Surv' = rep(c(1,1,3,3),4),
+           'Cohort' = c(rep('PT100',4),
+                        rep('Asian',4),
+                        rep('non-Asian',4),
+                        rep('OvPos',4)),
+           'CCA.Subtype' = c(rep(c('CCA1','CCA2'),4)),
+           'Surv.Rate' = c(OneYear.pt100.drug$surv,
+                           ThreeYear.pt100.drug$surv,
+                           OneYear.Asian$surv,
+                           ThreeYear.Asian$surv,
+                           OneYear.nonAsian$surv,
+                           ThreeYear.nonAsian$surv,
+                           OneYear.OvPos$surv,
+                           ThreeYear.OvPos$surv)
+           )
+
+SumTable$Surv.Rate <- round(SumTable$Surv.Rate*100, digits = 2)
+# draw a bar graph showing Asian CCA1 has lower 1 year survival rate
+df.prog <- SumTable %>% subset(Cohort %in% c('Asian','non-Asian') & X.year.Surv == 1)
+
+partFig7 <- ggplot(df.prog,
+       aes(x = Cohort,
+           y = Surv.Rate)) +
+  geom_bar(stat = 'identity', 
+           fill = 'black',
+           width = 0.5,
+           position = position_dodge(width = 0.3)) +
+  theme_pubclean() +
+  facet_grid(. ~ CCA.Subtype) +
+  ylim(0,100) +
+  labs(x = NULL,
+       y = '1-year Survival Rate (%)')
+  
+```
+
+Save partial Figure 7
+```{r}
+setwd('C:/Users/patipark/Dropbox/CCA project/CCA RNA-seq/NewGeneSet_Module_InitialAnalysis/Figure_5A_files')
+ggsave(partFig7,
+       filename = 'Figure7Part_1yearSR_20200624.pdf',
+       height = 2.5,
+       width = 3,
+       units = 'in',
+       device = cairo_pdf)
+dev.off()
 ```
 
